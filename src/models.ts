@@ -5,7 +5,7 @@ export interface Window {
   /** Percentual usado, 0..100. */
   used: number;
   resetsAt?: number;
-  /** Segundos; só 18000 (5h) e 604800 (semanal) geram ritmo. */
+  /** Segundos do ciclo; sem ele a janela não tem ritmo nem previsão. */
   duration?: number;
   group?: string;
   estimated?: boolean;

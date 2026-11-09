@@ -163,6 +163,9 @@ function disabled(id: string, name: string, source: string, error: string): Snap
 // --- OpenCode Go: assinatura, não sessões nem saldo Zen ---
 
 const OPENCODE_URL = "https://opencode.ai/zen/go/v1/usage";
+// O mes da OpenCode renova no aniversario da assinatura (28..31 dias); 30 dias basta para o ritmo.
+// shortcut: erro de ate ~2% do ciclo no ritmo da mensal, corrigir se a API informar o inicio.
+const MONTHLY = 30 * 86400;
 
 export function parseOpencode(root: Json, now: number): Snapshot {
   const usage = "usage" in root ? root.usage : root;
@@ -171,7 +174,7 @@ export function parseOpencode(root: Json, now: number): Snapshot {
     for (const [key, label, duration] of [
       ["rolling", "5 horas", 18000],
       ["weekly", "Semanal", 604800],
-      ["monthly", "Mensal", undefined],
+      ["monthly", "Mensal", MONTHLY],
     ] as const) {
       const item = usage[key];
       if (!isObject(item)) continue;

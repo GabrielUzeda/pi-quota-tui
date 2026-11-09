@@ -7,6 +7,14 @@ The npm registry has no changelog field: npmjs.com renders only the README of th
 version and lists publish dates. This file is the human record; each release is also a git tag
 `vX.Y.Z` (and a GitHub release).
 
+## [0.4.2] - 2026-11-09
+
+### Fixed
+- OpenCode's monthly window had no cycle length, so it showed RITMO INDISPONIVEL and fell back to
+  the absolute balance colors: 90% used with two days to renew looked red instead of on pace. It now
+  uses a 30-day cycle, which restores the pace marker, the pace label, the forecast and the health
+  line for that window.
+
 ## [0.4.1] - 2026-11-03
 
 ### Added
@@ -54,6 +62,7 @@ version and lists publish dates. This file is the human record; each release is 
 - Providers: OpenCode Go, Antigravity (via AGY at the time), OpenAI Codex, Claude Code and
   CommandCode, each behind its own parser and with pace, health and forecast rules.
 
+[0.4.2]: https://github.com/GabrielUzeda/pi-quota-tui/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/GabrielUzeda/pi-quota-tui/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/GabrielUzeda/pi-quota-tui/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/GabrielUzeda/pi-quota-tui/compare/v0.2.0...v0.3.0

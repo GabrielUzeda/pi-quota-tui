@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { bar, details, report, resolveSource } from "../src/format.ts";
-import { countdown, forecast, health, pace, resetText } from "../src/rules.ts";
+import { countdown, delta, forecast, health, pace, resetText } from "../src/rules.ts";
 import { outdated, type Snapshot, type Window } from "../src/models.ts";
 import {
   agySnapshot, clamped, collapse, COLLECTORS, epoch, estimateReset, nextMonthlyReset, num, paidIndex, parseAgyAccounts,
@@ -137,6 +137,14 @@ test("OpenCode: usage que não é objeto vira erro", () => {
 test("OpenCode: resposta sem a chave usage usa o próprio objeto", () => {
   const s = parseOpencode({ monthly: { percent: 12 } }, NOW);
   assert.equal(s.windows[0].label, "Mensal");
+});
+
+test("OpenCode: a mensal tem ciclo de 30 dias e, com 2 dias para renovar, fica no ritmo", () => {
+  const s = parseOpencode({ usage: { monthly: { percent: 90, resetsAt: NOW + 2 * 86400 } } }, NOW);
+  const w = s.windows[0];
+  assert.equal(w.duration, 30 * 86400);
+  assert.ok(pace(w, NOW) !== undefined);
+  assert.ok(delta(w, NOW)! < 0); // 90% usado e menos que os ~93% do ciclo
 });
 
 // --- CommandCode ---
