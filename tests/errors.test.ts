@@ -1,4 +1,4 @@
-// Erros de consulta: cada falha vira mensagem segura (sem URL, corpo ou stack) e o provedor continua listado.
+// Query errors: every failure becomes a safe message (no URL, body or stack) and the provider stays listed.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
@@ -19,7 +19,7 @@ before(async () => {
     const route = req.url ?? "";
     if (route === "/500") {
       res.statusCode = 500;
-      res.end("segredo-no-corpo");
+      res.end("secret-in-body");
     } else if (route === "/401") {
       res.statusCode = 401;
       res.end("{}");
@@ -52,13 +52,13 @@ async function errorOf(promise: Promise<unknown>): Promise<ReadError> {
   try {
     await promise;
   } catch (error) {
-    assert.ok(error instanceof ReadError, "erro deve ser ReadError: " + String(error));
+    assert.ok(error instanceof ReadError, "error must be a ReadError: " + String(error));
     return error;
   }
-  assert.fail("esperava falha");
+  assert.fail("expected a failure");
 }
 
-/** Ambiente isolado: HOME e XDG em pasta temporária, sem chaves reais e sem PATH de Codex. */
+/** Isolated environment: HOME and XDG in a temp folder, no real keys and no Codex on PATH. */
 async function isolated(extra: Record<string, string | undefined>, fn: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), "nt-home-"));
   const vars: Record<string, string | undefined> = {
@@ -85,54 +85,54 @@ async function isolated(extra: Record<string, string | undefined>, fn: (home: st
   }
 }
 
-// --- readJson: transporte e validação ---
+// --- readJson: transport and validation ---
 
-test("conexão recusada vira mensagem de indisponibilidade", async () => {
+test("connection refused becomes an unavailable message", async () => {
   const closed = createServer();
   await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", () => resolve()));
   const port = (closed.address() as AddressInfo).port;
   await new Promise<void>((resolve) => closed.close(() => resolve()));
   const error = await errorOf(readJson("http://127.0.0.1:" + port + "/x", { timeout: 2 }));
-  assert.equal(error.message, "Fonte indisponível ou tempo de consulta esgotado.");
+  assert.equal(error.message, "Source unavailable or the query timed out.");
 });
 
-test("HTTP 500 não vaza o corpo da resposta", async () => {
+test("HTTP 500 does not leak the response body", async () => {
   const error = await errorOf(readJson(base + "/500", { timeout: 2 }));
-  assert.equal(error.message, "Consulta recusada (HTTP 500).");
-  assert.ok(!error.message.includes("segredo"));
+  assert.equal(error.message, "Query refused (HTTP 500).");
+  assert.ok(!error.message.includes("secret"));
 });
 
-test("HTTP 401 e redirecionamento são recusados sem seguir", async () => {
-  assert.equal((await errorOf(readJson(base + "/401", { timeout: 2 }))).message, "Consulta recusada (HTTP 401).");
-  assert.equal((await errorOf(readJson(base + "/redirect", { timeout: 2 }))).message, "Consulta recusada (HTTP 302).");
+test("HTTP 401 and redirects are refused without following", async () => {
+  assert.equal((await errorOf(readJson(base + "/401", { timeout: 2 }))).message, "Query refused (HTTP 401).");
+  assert.equal((await errorOf(readJson(base + "/redirect", { timeout: 2 }))).message, "Query refused (HTTP 302).");
 });
 
-test("JSON inválido e formato inesperado", async () => {
-  assert.equal((await errorOf(readJson(base + "/html", { timeout: 2 }))).message, "Resposta de quota inválida.");
-  assert.equal((await errorOf(readJson(base + "/array", { timeout: 2 }))).message, "Formato de quota não reconhecido.");
+test("invalid JSON and unexpected format", async () => {
+  assert.equal((await errorOf(readJson(base + "/html", { timeout: 2 }))).message, "Invalid quota response.");
+  assert.equal((await errorOf(readJson(base + "/array", { timeout: 2 }))).message, "Unrecognized quota format.");
 });
 
-test("tempo esgotado vira mensagem de indisponibilidade", async () => {
+test("timeout becomes an unavailable message", async () => {
   const error = await errorOf(readJson(base + "/slow", { timeout: 0.2 }));
-  assert.equal(error.message, "Fonte indisponível ou tempo de consulta esgotado.");
+  assert.equal(error.message, "Source unavailable or the query timed out.");
 });
 
-test("resposta acima de 2 MiB é cortada durante a leitura", async () => {
+test("a response above 2 MiB is cut during the read", async () => {
   const error = await errorOf(readJson(base + "/big", { timeout: 5 }));
-  assert.equal(error.message, "Resposta excede o limite de leitura.");
+  assert.equal(error.message, "Response exceeds the read limit.");
 });
 
-test("URL não permitida é recusada antes de qualquer conexão", async () => {
-  for (const url of ["não é url", "ftp://127.0.0.1/x", "http://user:pw@127.0.0.1/x"]) {
-    assert.equal((await errorOf(readJson(url, { timeout: 1 }))).message, "Endereço de quota não permitido.");
+test("a disallowed URL is refused before any connection", async () => {
+  for (const url of ["not a url", "ftp://127.0.0.1/x", "http://user:pw@127.0.0.1/x"]) {
+    assert.equal((await errorOf(readJson(url, { timeout: 1 }))).message, "Quota address not allowed.");
   }
   assert.equal(
     (await errorOf(readJson("http://example.com/x", { timeout: 1 }))).message,
-    "HTTP sem TLS permitido apenas em loopback.",
+    "Plain HTTP allowed only on loopback.",
   );
 });
 
-// --- Monitor: o que chega ao relatório ---
+// --- Monitor: what reaches the report ---
 
 const NOW = Date.now() / 1000;
 const okSnapshot: Snapshot = {
@@ -141,7 +141,7 @@ const okSnapshot: Snapshot = {
 };
 const offSnapshot = (id: string): Snapshot => ({ id, name: id, windows: [], source: "x", disabled: true });
 
-/** Monitor em que só o OpenCode é controlado; os demais provedores ficam desligados. */
+/** Monitor where only OpenCode is controlled; the other providers stay disabled. */
 function monitorWith(opencode: () => Promise<Snapshot[]>): Monitor {
   const collectors: Record<string, () => Promise<Snapshot[]>> = {};
   for (const id of Object.keys(COLLECTORS)) collectors[id] = async () => [offSnapshot(id)];
@@ -149,32 +149,32 @@ function monitorWith(opencode: () => Promise<Snapshot[]>): Monitor {
   return new Monitor(collectors);
 }
 
-test("erro de consulta chega ao relatório com a mensagem específica", async () => {
+test("a query error reaches the report with the specific message", async () => {
   const monitor = monitorWith(async () => {
-    throw new ReadError("Consulta recusada (HTTP 401).");
+    throw new ReadError("Query refused (HTTP 401).");
   });
   await monitor.refresh();
   const [s] = monitor.snapshots("opencode");
-  assert.equal(s.error, "Consulta recusada (HTTP 401).");
+  assert.equal(s.error, "Query refused (HTTP 401).");
   assert.equal(s.disabled, false);
   monitor.stop();
 });
 
-test("erro inesperado não vaza detalhes internos", async () => {
+test("an unexpected error does not leak internal details", async () => {
   const monitor = monitorWith(async () => {
-    throw new TypeError("boom interno");
+    throw new TypeError("internal boom");
   });
   await monitor.refresh();
   const [s] = monitor.snapshots("opencode");
-  assert.equal(s.error, "Falha interna na leitura; última quota preservada.");
+  assert.equal(s.error, "Internal read failure; last quota kept.");
   assert.ok(!(s.error ?? "").includes("boom"));
   monitor.stop();
 });
 
-test("falha depois de leitura boa preserva a quota, marcada como antiga", async () => {
+test("a failure after a good read keeps the quota, marked as old", async () => {
   let failing = false;
   const monitor = monitorWith(async () => {
-    if (failing) throw new ReadError("Fonte indisponível ou tempo de consulta esgotado.");
+    if (failing) throw new ReadError("Source unavailable or the query timed out.");
     return [okSnapshot];
   });
   await monitor.refresh();
@@ -183,13 +183,13 @@ test("falha depois de leitura boa preserva a quota, marcada como antiga", async 
   const [s] = monitor.snapshots("opencode");
   assert.equal(s.windows.length, 1);
   assert.equal(s.stale, true);
-  assert.equal(s.error, "Fonte indisponível ou tempo de consulta esgotado.");
+  assert.equal(s.error, "Source unavailable or the query timed out.");
   monitor.stop();
 });
 
-// --- coletores: erros por provedor ---
+// --- collectors: per-provider errors ---
 
-test("OpenCode sem chave fica desligado com instrução, não erro", async () => {
+test("OpenCode without a key stays disabled with instructions, not an error", async () => {
   await isolated({}, async () => {
     const [s] = await COLLECTORS.opencode();
     assert.equal(s.disabled, true);
@@ -197,19 +197,19 @@ test("OpenCode sem chave fica desligado com instrução, não erro", async () =>
   });
 });
 
-test("Codex ausente no PATH fica desligado com instrução", async () => {
+test("Codex missing from PATH stays disabled with instructions", async () => {
   await isolated({}, async (home) => {
     const empty = join(home, "empty");
     await mkdir(empty);
     await isolated({ PATH: empty }, async () => {
       const [s] = await COLLECTORS.openai();
       assert.equal(s.disabled, true);
-      assert.equal(s.error, "Codex CLI não encontrado no PATH.");
+      assert.equal(s.error, "Codex CLI not found on PATH.");
     });
   });
 });
 
-/** Cria um "codex" falso em pasta própria; o script roda no lugar do binário real. */
+/** Creates a fake "codex" in its own folder; the script runs in place of the real binary. */
 async function fakeCodex(home: string, lines: string[]): Promise<string> {
   const bin = join(home, "bin");
   await mkdir(bin, { recursive: true });
@@ -218,42 +218,42 @@ async function fakeCodex(home: string, lines: string[]): Promise<string> {
   return bin;
 }
 
-test("Codex que encerra sem responder vira erro legível", async () => {
+test("Codex that exits without answering becomes a readable error", async () => {
   await isolated({}, async (home) => {
     const bin = await fakeCodex(home, ["exit 0"]);
     await isolated({ PATH: bin }, async () => {
       const error = await errorOf(COLLECTORS.openai());
-      assert.equal(error.message, "O Codex não respondeu à leitura de quotas.");
+      assert.equal(error.message, "Codex did not answer the quota read.");
     });
   });
 });
 
-test("Codex que recusa a leitura vira erro legível", async () => {
+test("Codex that refuses the read becomes a readable error", async () => {
   await isolated({}, async (home) => {
     const bin = await fakeCodex(home, ["read a", "read b", "read c", 'echo \'{"id":2,"error":{"code":-1}}\''] );
     await isolated({ PATH: bin }, async () => {
       const error = await errorOf(COLLECTORS.openai());
-      assert.equal(error.message, "O Codex recusou a leitura de quotas.");
+      assert.equal(error.message, "Codex refused the quota read.");
     });
   });
 });
 
-test("histórico do Claude em formato desconhecido vira erro no relatório", async () => {
+test("Claude history in an unknown format becomes an error in the report", async () => {
   await isolated({}, async (home) => {
     const dir = join(home, "config", "Claude");
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "plan-usage-history.json"), '{"nope":1}');
     const [s] = await COLLECTORS.claude();
-    assert.equal(s.error, "Histórico do Claude em formato desconhecido.");
+    assert.equal(s.error, "Claude history in an unknown format.");
   });
 });
 
-test("Codex ausente some do relatório; outro provedor sem chave continua listado", () => {
+test("a missing Codex vanishes from the report; another provider without a key stays listed", () => {
   const codexOff: Snapshot = { id: "openai", name: "OpenAI Codex", windows: [], source: "codex app-server",
-    error: "Codex CLI não encontrado no PATH.", disabled: true };
+    error: "Codex CLI not found on PATH.", disabled: true };
   const ocOff: Snapshot = { id: "opencode", name: "OpenCode Go", windows: [], source: "x",
-    error: "Defina OPENCODE_GO_KEY.", disabled: true };
+    error: "Set OPENCODE_GO_KEY.", disabled: true };
   const text = report([codexOff, ocOff], Date.now() / 1000);
-  assert.ok(!text.includes("Codex"), "Codex não deve aparecer");
-  assert.match(text, /Nao configurado: OpenCode Go\./);
+  assert.ok(!text.includes("Codex"), "Codex must not appear");
+  assert.match(text, /Not configured: OpenCode Go\./);
 });

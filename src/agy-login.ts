@@ -1,5 +1,5 @@
-// Contas do Antigravity num arquivo do próprio TUI: /quota-login importa o que o AGY já tinha e,
-// quando o refresh token não vale mais, faz o login Google aqui mesmo (OAuth loopback + PKCE).
+// Antigravity accounts in the TUI's own file: /quota-login imports what AGY already had and,
+// when the refresh token is no longer valid, runs the Google login here (OAuth loopback + PKCE).
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -21,15 +21,15 @@ export type Notify = (message: string, level?: "info" | "warning" | "error") => 
 const SCOPE = "openid email profile https://www.googleapis.com/auth/cloud-platform";
 const TIMEOUT_MS = 5 * 60_000;
 
-/** Grava a lista de contas com modo 600: são refresh tokens. */
+/** Writes the account list with mode 600: they are refresh tokens. */
 export async function saveAccounts(target: string, accounts: readonly Json[]): Promise<void> {
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   await writeFile(target, JSON.stringify(accounts, null, 2) + "\n", { mode: 0o600 });
-  // writeFile não aperta o modo de um arquivo que já existia.
+  // writeFile does not tighten the mode of an existing file.
   await chmod(target, 0o600);
 }
 
-/** Só as contas cujo refresh token o Google ainda renova. */
+/** Only the accounts whose refresh token Google still renews. */
 export async function validAccounts(
   accounts: readonly ({ refreshToken: string } & Json)[],
   refresh: (token: string) => Promise<unknown> = agyToken,
@@ -40,7 +40,7 @@ export async function validAccounts(
       await refresh(account.refreshToken.trim());
       valid.push(account);
     } catch {
-      // Token revogado ou emitido para outro client: fica de fora.
+      // Revoked token or one issued to another client: left out.
     }
   }
   return valid;
@@ -62,7 +62,7 @@ export function agyConsentUrl(redirect: string, challenge: string): string {
   return `${CONSENT_ENDPOINT}?${query}`;
 }
 
-/** E-mail do id_token. Vem assinado pelo Google, mas aqui só serve de rótulo local. */
+/** E-mail from the id_token. Google signs it, but here it is only a local label. */
 export function emailFromIdToken(token: unknown): string | undefined {
   if (typeof token !== "string") return undefined;
   try {
@@ -89,22 +89,22 @@ async function consentLogin(notify: Notify): Promise<Json> {
     if (url.pathname !== "/callback") return void response.writeHead(404).end();
     const error = url.searchParams.get("error");
     response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end(error ? "Login cancelado." : "Login concluído, pode fechar esta aba.");
-    if (error) refuse(new Error("Login Google cancelado."));
+    response.end(error ? "Login cancelled." : "Login done, you can close this tab.");
+    if (error) refuse(new Error("Google login cancelled."));
     else grant(url.searchParams.get("code") ?? "");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   const redirect = `http://127.0.0.1:${port}/callback`;
-  const timer = setTimeout(() => refuse(new Error("Tempo esgotado esperando o login no navegador.")), TIMEOUT_MS);
-  notify(`Abra no navegador para entrar na conta Antigravity: ${agyConsentUrl(redirect, challenge)}`, "info");
+  const timer = setTimeout(() => refuse(new Error("Timed out waiting for the browser login.")), TIMEOUT_MS);
+  notify(`Open in the browser to sign in to the Antigravity account: ${agyConsentUrl(redirect, challenge)}`, "info");
   try {
     const granted = await code;
-    if (!granted) throw new Error("O Google não devolveu o código de autorização.");
+    if (!granted) throw new Error("Google did not return the authorization code.");
     const root = await agyLoginToken(granted, redirect, verifier);
     const refresh = root.refresh_token;
-    if (typeof refresh !== "string" || !refresh) throw new Error("O Google não devolveu refresh token; tente o login de novo.");
-    // projectId fica de fora: sem ele a coleta usa o projeto padrão do Cloud Code.
+    if (typeof refresh !== "string" || !refresh) throw new Error("Google did not return a refresh token; try the login again.");
+    // projectId stays out: without it the collection uses the Cloud Code default project.
     return { refreshToken: refresh, email: emailFromIdToken(root.id_token) };
   } finally {
     clearTimeout(timer);
@@ -112,22 +112,22 @@ async function consentLogin(notify: Notify): Promise<Json> {
   }
 }
 
-/** Importa do AGY se der, senão faz o login na própria extensão. */
+/** Imports from AGY when possible, otherwise runs the login in the extension itself. */
 export async function loginAgy(notify: Notify): Promise<void> {
   const target = agyAccountsPath();
   const own = parseAgyAccounts(await readPrivateJson(target));
   if (own.length && (await validAccounts(own)).length === own.length) {
-    notify(`Antigravity: ${own.length} conta(s) já validadas em ${target}.`, "info");
+    notify(`Antigravity: ${own.length} account(s) already validated in ${target}.`, "info");
     return;
   }
   const imported = await validAccounts(parseAgyAccounts(await readPrivateJson(agyLegacyPath())));
   if (imported.length) {
     await saveAccounts(target, imported);
-    notify(`Antigravity: ${imported.length} conta(s) importada(s) do AGY para ${target}.`, "info");
+    notify(`Antigravity: ${imported.length} account(s) imported from AGY into ${target}.`, "info");
     return;
   }
-  notify("Antigravity: nenhum token do AGY valeu; abrindo o login do Google.", "warning");
+  notify("Antigravity: no AGY token was valid; opening the Google login.", "warning");
   const account = await consentLogin(notify);
   await saveAccounts(target, [account]);
-  notify(`Antigravity: conta ${account.email ?? "nova"} salva em ${target}.`, "info");
+  notify(`Antigravity: conta ${account.email ?? "new"} saved to ${target}.`, "info");
 }

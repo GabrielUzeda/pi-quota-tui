@@ -1,4 +1,4 @@
-// Painel de cotas: lista ANSI pura, provedores lado a lado quando cabem. Sem imagens, sem animação.
+// Quota panel: plain ANSI list, providers side by side when they fit. No images, no animation.
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { getTerminalColorMode, mixColors, rgbColor, styleText, truncateToWidth, visibleWidth, type Color, type Component } from "@earendil-works/pi-tui";
 import { bar } from "./format.ts";
@@ -7,14 +7,14 @@ import type { Snapshot, Window } from "./models.ts";
 import { expired, pace, visible } from "./rules.ts";
 import type { Monitor } from "./service.ts";
 
-/** Largura da barra de saldo, separador entre janelas e recuo entre colunas de provedores. */
+/** Balance bar width, separator between windows and gap between provider columns. */
 const BAR_WIDTH = 8;
 const SEP = " │ ";
 const GAP = "   ";
-/** Abaixo disso um provedor não cabe legível; duas colunas só acima de 2 x isso. */
+/** Below this a provider does not fit legibly; two columns only above 2 x this. */
 const MIN_COL = 30;
 
-/** Cores de marca; branco usa a cor padrão do texto, que acompanha tema claro e escuro. */
+/** Brand colors; white uses the default text color, which follows light and dark themes. */
 const BRAND: Record<string, Color | "text"> = {
   antigravity: rgbColor(66, 133, 244),
   opencode: "text",
@@ -31,8 +31,8 @@ function paintName(theme: Theme, s: Snapshot): string {
 }
 
 /**
- * Cor da barra: com ritmo conhecido, compara o uso com o que já deveria ter sido gasto
- * (verde com folga, amarelo adiantado, vermelho queimando rápido). Sem ritmo, usa o saldo.
+ * Bar color: with a known pace, compares usage with what should already have been spent
+ * (green with slack, yellow ahead, red burning fast). Without pace, uses the balance.
  */
 export function barColor(w: Window, reference: number | undefined): ThemeColor {
   if (reference === undefined) return w.used < 75 ? "accent" : w.used < 90 ? "warning" : "error";
@@ -40,7 +40,7 @@ export function barColor(w: Window, reference: number | undefined): ThemeColor {
   return over > 10 ? "error" : over > 3 ? "warning" : "success";
 }
 
-/** Tempo até renovar em uma única unidade, sem rótulos extras. */
+/** Time until renewal in a single unit, no extra labels. */
 export function compactReset(w: Window, now: number): string {
   if (w.resetsAt === undefined) return "--";
   const seconds = w.resetsAt - now;
@@ -51,8 +51,8 @@ export function compactReset(w: Window, now: number): string {
 }
 
 /**
- * Uma janela em texto: grupo e barra de saldo com marca de ritmo, mais o tempo de renovação.
- * Antigravity mistura famílias (Gemini/Claude/Argon): a primeira palavra do grupo identifica a janela.
+ * One window as text: group and balance bar with the pace mark, plus the time until renewal.
+ * Antigravity mixes families (Gemini/Claude/Argon): the group's first word identifies the window.
  */
 function windowItem(w: Window, now: number, stale: boolean, theme: Theme): string {
   const reference = pace(w, now, stale);
@@ -61,7 +61,7 @@ function windowItem(w: Window, now: number, stale: boolean, theme: Theme): strin
   return tag + theme.fg(barColor(w, reference), marker) + " " + compactReset(w, now);
 }
 
-/** Junta as janelas em linhas, quebrando com recuo alinhado sob a primeira janela. */
+/** Joins the windows into lines, wrapping with an indent aligned under the first window. */
 function wrap(name: string, items: string[], width: number): string[] {
   const headWidth = visibleWidth(name) + 1;
   const indent = " ".repeat(Math.min(headWidth, Math.max(0, width - 1)));
@@ -91,15 +91,15 @@ function wrap(name: string, items: string[], width: number): string[] {
   return lines;
 }
 
-/** Linhas de um provedor, já na largura da coluna. */
+/** Lines of one provider, already at the column width. */
 function providerLines(s: Snapshot, width: number, now: number, theme: Theme): string[] {
   const stale = outdated(s, now);
-  // Sem corte por largura: quem some é só janela esgotada, e as abaixo dela (ver visible).
+  // No width cut: only exhausted windows vanish, and the ones below them (see visible).
   const items = visible(s.windows).map((w) => windowItem(w, now, stale, theme));
   return wrap(paintName(theme, s), items, width);
 }
 
-/** Rampa do tempo de espera: verde é logo ali, amarelo ainda demora, vermelho é o ciclo inteiro. */
+/** Wait ramp: green is soon, yellow still takes a while, red is the whole cycle. */
 const WAIT_GREEN = rgbColor(63, 185, 80);
 const WAIT_YELLOW = rgbColor(210, 153, 34);
 const WAIT_RED = rgbColor(248, 81, 73);
@@ -107,9 +107,9 @@ const WAIT_RED = rgbColor(248, 81, 73);
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /**
- * Cor contínua do tempo de espera, sem marcos fixos: quanto mais perto do ideal, mais perto do verde.
- * O ideal é relativo ao ciclo (18h numa semanal é logo ali; 12d numa mensal não), e sem ciclo
- * conhecido a régua cai para 1h..1d.
+ * Continuous wait color, no fixed marks: the closer to the ideal, the closer to green.
+ * The ideal is relative to the cycle (18h of a weekly is soon; 12d of a monthly is not), and
+ * without a known cycle the scale falls back to 1h..1d.
  */
 export function waitColor(duration: number | undefined, left: number | undefined): Color | ThemeColor {
   if (left === undefined) return "dim";
@@ -121,8 +121,8 @@ export function waitColor(duration: number | undefined, left: number | undefined
 }
 
 /**
- * Tudo que está esgotado numa linha só, no fim: quem volta antes aparece primeiro.
- * Provedor cujo único grupo esgotou não some da tela, só sai da lista de janelas.
+ * Everything exhausted in a single line at the end: whoever comes back sooner shows first.
+ * A provider whose only group is exhausted stays on screen, it only leaves the window list.
  */
 function expiredLine(snapshots: Snapshot[], now: number, width: number, theme: Theme): string[] {
   const items = snapshots.flatMap((s) =>
@@ -143,7 +143,7 @@ function expiredLine(snapshots: Snapshot[], now: number, width: number, theme: T
   return wrap(tag, items.map((i) => i.text), width);
 }
 
-/** Componente do widget: provedores no dock abaixo do editor, até dois por linha. */
+/** Widget component: providers in the dock below the editor, up to two per line. */
 export class QuotaPanel implements Component {
   private readonly monitor: Monitor;
   private readonly theme: Theme;
@@ -155,7 +155,7 @@ export class QuotaPanel implements Component {
 
   render(width: number): string[] {
     const now = Date.now() / 1000;
-    // Provedor sem nenhuma janela (proxy fora, Codex mudo, Claude sem histórico) não rende linha.
+    // A provider with no window (proxy down, silent Codex, Claude without history) renders no line.
     const snapshots = this.monitor.snapshots().filter((s) => !s.disabled && s.windows.length);
     const active = snapshots.filter((s) => visible(s.windows).length);
 
@@ -172,7 +172,7 @@ export class QuotaPanel implements Component {
       }
     }
     lines.push(...expiredLine(snapshots, now, width, this.theme));
-    if (!lines.length) return [truncateToWidth(this.theme.fg("dim", "Nenhuma cota disponível. Veja o README."), width, "…", true)];
+    if (!lines.length) return [truncateToWidth(this.theme.fg("dim", "No quota available. See the README."), width, "…", true)];
     return lines;
   }
 

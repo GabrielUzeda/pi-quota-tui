@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agyConsentUrl, emailFromIdToken, saveAccounts, validAccounts } from "../src/agy-login.ts";
 
-test("saveAccounts cria o diretório e grava com modo 600", async () => {
+test("saveAccounts creates the directory and writes with mode 600", async () => {
   const dir = join(await mkdtemp(join(tmpdir(), "quota-login-")), "nested");
   const file = join(dir, "agy-accounts.json");
   await saveAccounts(file, [{ refreshToken: "r1", email: "a@b.c" }]);
@@ -13,7 +13,7 @@ test("saveAccounts cria o diretório e grava com modo 600", async () => {
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")), [{ refreshToken: "r1", email: "a@b.c" }]);
 });
 
-test("saveAccounts aperta o modo de um arquivo que já existia", async () => {
+test("saveAccounts tightens the mode of an existing file", async () => {
   const dir = await mkdtemp(join(tmpdir(), "quota-login-"));
   const file = join(dir, "agy.json");
   await saveAccounts(file, [{ refreshToken: "r1" }]);
@@ -23,23 +23,23 @@ test("saveAccounts aperta o modo de um arquivo que já existia", async () => {
   assert.equal((await stat(file)).mode & 0o777, 0o600);
 });
 
-test("validAccounts descarta token que o Google não renova", async () => {
-  const accounts = [{ refreshToken: " bom " }, { refreshToken: "morto" }];
-  const vistos: string[] = [];
+test("validAccounts drops the token Google does not renew", async () => {
+  const accounts = [{ refreshToken: " good " }, { refreshToken: "dead" }];
+  const seen: string[] = [];
   const valid = await validAccounts(accounts, async (token) => {
-    vistos.push(token);
-    if (token === "morto") throw new Error("revogado");
+    seen.push(token);
+    if (token === "dead") throw new Error("revoked");
     return "access";
   });
-  assert.deepEqual(vistos, ["bom", "morto"]);
-  assert.deepEqual(valid, [{ refreshToken: " bom " }]);
+  assert.deepEqual(seen, ["good", "dead"]);
+  assert.deepEqual(valid, [{ refreshToken: " good " }]);
 });
 
-test("agyConsentUrl leva client, escopo offline e PKCE", () => {
-  const url = new URL(agyConsentUrl("http://127.0.0.1:1234/callback", "desafio"));
+test("agyConsentUrl carries the client, offline scope and PKCE", () => {
+  const url = new URL(agyConsentUrl("http://127.0.0.1:1234/callback", "challenge"));
   assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
   assert.equal(url.searchParams.get("redirect_uri"), "http://127.0.0.1:1234/callback");
-  assert.equal(url.searchParams.get("code_challenge"), "desafio");
+  assert.equal(url.searchParams.get("code_challenge"), "challenge");
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.equal(url.searchParams.get("access_type"), "offline");
   assert.equal(url.searchParams.get("prompt"), "consent");
@@ -47,10 +47,10 @@ test("agyConsentUrl leva client, escopo offline e PKCE", () => {
   assert.ok((url.searchParams.get("client_id") ?? "").endsWith(".apps.googleusercontent.com"));
 });
 
-test("emailFromIdToken lê o e-mail e ignora lixo", () => {
-  const payload = Buffer.from(JSON.stringify({ email: "conta@exemplo.com" })).toString("base64url");
-  assert.equal(emailFromIdToken(`header.${payload}.assinatura`), "conta@exemplo.com");
+test("emailFromIdToken reads the e-mail and ignores garbage", () => {
+  const payload = Buffer.from(JSON.stringify({ email: "account@example.com" })).toString("base64url");
+  assert.equal(emailFromIdToken(`header.${payload}.signature`), "account@example.com");
   assert.equal(emailFromIdToken(undefined), undefined);
-  assert.equal(emailFromIdToken("sem.pontos"), undefined);
-  assert.equal(emailFromIdToken("a.nao-json.c"), undefined);
+  assert.equal(emailFromIdToken("no.dots"), undefined);
+  assert.equal(emailFromIdToken("a.not-json.c"), undefined);
 });

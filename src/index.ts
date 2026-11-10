@@ -1,4 +1,4 @@
-// pi-quota-tui: cotas de assinatura de IA numa lista ANSI no widget do pi.
+// pi-quota-tui: AI subscription quotas as an ANSI list in the pi widget.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
@@ -16,14 +16,14 @@ export default function (pi: ExtensionAPI) {
   const monitor = new Monitor();
   let shown = false;
 
-  // Widget abaixo do editor: reserva linhas no layout, em vez de cobrir o chat.
+  // Widget below the editor: reserves layout lines instead of covering the chat.
   const showPanel = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
     ctx.ui.setWidget(WIDGET, (_tui, theme) => new QuotaPanel(monitor, theme), { placement: "belowEditor" });
     shown = true;
   };
 
-  // setWidget(undefined) desmonta o painel do dock.
+  // setWidget(undefined) unmounts the dock panel.
   const hidePanel = (ctx: ExtensionContext) => {
     if (ctx.hasUI) ctx.ui.setWidget(WIDGET, undefined);
     shown = false;
@@ -49,57 +49,57 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerEntryRenderer("quota-report", (entry: { data?: { content?: string } }) =>
-    new Markdown(entry.data?.content ?? "Sem dados de quota.", 1, 1, getMarkdownTheme()));
+    new Markdown(entry.data?.content ?? "No quota data.", 1, 1, getMarkdownTheme()));
 
   const reportCommand = async (args: string | undefined, ctx: ExtensionContext) => {
     const source = args?.trim() || "all";
-    if (!resolveSource(source).valid) return ctx.ui.notify("Fontes: " + SOURCE_NAMES.join(", "), "error");
-    ctx.ui.notify("Consultando quotas...", "info");
-    // appendEntry mostra na TUI sem alimentar o contexto do LLM.
+    if (!resolveSource(source).valid) return ctx.ui.notify("Sources: " + SOURCE_NAMES.join(", "), "error");
+    ctx.ui.notify("Reading quotas...", "info");
+    // appendEntry shows it in the TUI without feeding the LLM context.
     pi.appendEntry("quota-report", { content: await quotas(source) });
   };
 
   pi.registerCommand("quota", {
-    description: "Relatório das cotas [all|opencode|agy|commandcode]",
+    description: "Quota report [all|opencode|agy|commandcode]",
     handler: reportCommand,
   });
   pi.registerCommand("usage", {
-    description: "Alias de /quota",
+    description: "Alias of /quota",
     handler: reportCommand,
   });
   pi.registerCommand("quota-login", {
-    description: "Importa as contas Antigravity do AGY ou faz o login Google",
+    description: "Imports the Antigravity accounts from AGY or runs the Google login",
     handler: async (_args, ctx) => {
       try {
         await loginAgy((message, level) => ctx.ui.notify(message, level ?? "info"));
         await monitor.refresh();
       } catch (error) {
-        ctx.ui.notify(error instanceof Error ? error.message : "Falha no login do Antigravity.", "error");
+        ctx.ui.notify(error instanceof Error ? error.message : "Antigravity login failed.", "error");
       }
     },
   });
 
   pi.registerCommand("quotas", {
-    description: "Mostra ou esconde o painel de cotas",
+    description: "Shows or hides the quota panel",
     handler: async (_args, ctx) => toggle(ctx),
   });
 
   pi.registerTool({
     name: "get_quotas",
     label: "Get Quotas Summary",
-    description: "Consulta o uso e cotas remanescentes de OpenCode Go, Antigravity, OpenAI Codex, Claude Code e CommandCode.",
+    description: "Reads usage and remaining quota of OpenCode Go, Antigravity, OpenAI Codex, Claude Code and CommandCode.",
     parameters: Type.Object({
       source: Type.Optional(
         Type.Union(
           [Type.Literal("all"), Type.Literal("opencode"), Type.Literal("agy"), Type.Literal("commandcode")],
-          { description: "Fonte das cotas a consultar (all, opencode, agy, commandcode)" },
+          { description: "Quota source to read (all, opencode, agy, commandcode)" },
         ),
       ),
     }),
     async execute(_id, params) {
       const source = params.source ?? "all";
       if (!resolveSource(source).valid)
-        return { content: [{ type: "text", text: "Fonte desconhecida: " + source + ". Use: " + SOURCE_NAMES.join(", ") + "." }], details: { source } };
+        return { content: [{ type: "text", text: "Unknown source: " + source + ". Use: " + SOURCE_NAMES.join(", ") + "." }], details: { source } };
       return { content: [{ type: "text", text: await quotas(source) }], details: { source } };
     },
   });

@@ -40,7 +40,7 @@ Expired: Antigravity Argon 6d │ CommandCode 12.2d
 - The bar shows the **remaining balance**; the `│` inside it is the pace mark (where the balance should be for it to last until renewal).
 - The bar's color is pace, not balance: green with slack, yellow 3 to 10 points ahead, red above that. Without a known reset/duration it falls back to balance (blue, yellow from 75% used, red from 90%).
 - When the windows do not fit, the row wraps with an indent aligned under the first window.
-- An exhausted window (100% used) hides itself and the ones below it in the monthly > weekly > 5-hour hierarchy, within the same group. Monthly at zero removes the provider from the panel; weekly at zero leaves only the monthly. Windows without a rank (Antigravity's "Limite") never disappear.
+- An exhausted window (100% used) hides itself and the ones below it in the monthly > weekly > 5-hour hierarchy, within the same group. Monthly at zero removes the provider from the panel; weekly at zero leaves only the monthly. Windows without a rank (Antigravity's "Limit") never disappear.
 - Whatever exhausted comes back in a final `Expired:` row with the time until it renews. Per group the governing window is the one that blocks the ones below it; rows are sorted from the soonest return to the latest. The tag is a fixed strong red and the time sits on a continuous green → yellow → red ramp, weighed against the window's own cycle: 18h of a weekly is green, 12d of a monthly is not. A provider whose only group is exhausted stays on screen through this row instead of vanishing.
 - The wait ramp has no fixed thresholds: it interpolates between `#3fb950`, `#d29922` and `#f85149` in sRGB, easing from 15% of the cycle (fully green) to 60% (fully red). Without a known cycle, the fallback scale is 1h..1d.
 - The panel writes no status words: no `OUTDATED`, no `TIGHT`. Diagnostics live in `/quota`.
@@ -126,7 +126,6 @@ README for the published version and lists publish dates only.
 
 This repository is published on npm as [`pi-quota-tui`](https://www.npmjs.com/package/pi-quota-tui) with the `pi-package` keyword, which makes it eligible for the [pi package catalog](https://pi.dev/packages). The `pi.extensions` field points to `./src/index.ts` and `pi.image` to the preview above.
 
-Note: the panel and `/quota` report itself are still written in Portuguese; this README is the English entry point.
 
 ## License
 

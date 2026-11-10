@@ -7,6 +7,23 @@ The npm registry has no changelog field: npmjs.com renders only the README of th
 version and lists publish dates. This file is the human record; each release is also a git tag
 `vX.Y.Z` (and a GitHub release).
 
+## [Unreleased]
+
+### Changed
+- Everything user-visible is now English: panel and report labels (`% USED | % REMAINING`,
+  `QUOTA WATCH // AI MONITOR`, `Not configured: ...`), window labels (`5 hours`, `Weekly`,
+  `Monthly`, `Limit`, `N min window`), pace/health vocabulary (`ON TRACK`, `NO SIGNAL`,
+  `OUTDATED`, `TIGHT`, `LOW`, `SLACK`, `PACE UNAVAILABLE`, `N% AHEAD`, `N% SLACK`,
+  `QUOTA EXHAUSTED; waiting for renewal`, `RESETS IN ...`), every `ReadError` and monitor
+  message, the pi command/tool descriptions and the Antigravity login page. Report times use the
+  `en-US` locale.
+
+### Fixed
+- `User-Agent` sent to the providers was stuck at `pi-quota-tui/0.2`.
+
+### Removed
+- Dead `"and" -> "e"` display-name normalization in `parseGroups`.
+
 ## [0.4.2] - 2026-11-09
 
 ### Fixed

@@ -1,11 +1,11 @@
-// Polling independente do painel. Falhas temporárias preservam a última leitura, marcada como antiga.
+// Polling independent of the panel. Temporary failures keep the last reading, marked as old.
 import { COLLECTORS, ReadError } from "./providers.ts";
 import type { Snapshot } from "./models.ts";
 
 const INTERVAL_MS = 120_000;
 const COLLECT_TIMEOUT_MS = 25_000;
-const PENDING = "Aguardando primeira leitura.";
-const GENERIC = "Falha interna na leitura; última quota preservada.";
+const PENDING = "Waiting for the first read.";
+const GENERIC = "Internal read failure; last quota kept.";
 const NAMES: Record<string, string> = {
   antigravity: "Antigravity",
   opencode: "OpenCode Go",
@@ -30,7 +30,7 @@ export class Monitor {
       this.data.set(id, [{ id, name: NAMES[id] ?? id, windows: [], source: "", error: PENDING, disabled: true }]);
   }
 
-  /** Dispara uma coleta em todos os provedores; se já houver uma em andamento, reaproveita. */
+  /** Starts a collection on every provider; if one is already running, reuses it. */
   refresh(): Promise<void> {
     this.inFlight ??= this.collectAll().finally(() => {
       this.inFlight = undefined;
@@ -59,7 +59,7 @@ export class Monitor {
     await Promise.all(Object.entries(this.collectors).map(([id, collect]) => this.run(id, collect)));
   }
 
-  /** Cada provedor é isolado: falha ou resposta inesperada de um não afeta os demais. */
+  /** Each provider is isolated: a failure or unexpected answer from one does not affect the others. */
   private async run(id: string, collect: Collector): Promise<void> {
     try {
       this.apply(id, await withTimeout(collect(), this.timeoutMs));
@@ -76,7 +76,7 @@ export class Monitor {
     }
     if (!fresh.some((s) => s.windows.length && !s.error)) {
       if (fresh.length && !current.some((s) => s.windows.length)) this.data.set(provider, fresh);
-      else this.fail(provider, fresh[0]?.error ?? "Nenhuma leitura disponível.");
+      else this.fail(provider, fresh[0]?.error ?? "No reading available.");
       return;
     }
     const previous = new Map(current.filter((s) => s.windows.length).map((s) => [s.id, s]));
@@ -86,7 +86,7 @@ export class Monitor {
       return !snapshot.windows.length && old ? { ...old, stale: true, error: snapshot.error } : snapshot;
     });
     for (const old of previous.values())
-      merged.push({ ...old, stale: true, error: "Conta ausente na leitura atual." });
+      merged.push({ ...old, stale: true, error: "Account missing from the current read." });
     this.data.set(provider, merged);
   }
 
@@ -102,12 +102,12 @@ export class Monitor {
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ReadError("Consulta excedeu o tempo limite.")), ms);
+    timer = setTimeout(() => reject(new ReadError("Query exceeded the time limit.")), ms);
   });
   return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
 }
 
-/** Só a mensagem de ReadError chega à tela; qualquer outro erro vira texto genérico. */
+/** Only the ReadError message reaches the screen; any other error becomes generic text. */
 function safeMessage(reason: unknown): string {
   return reason instanceof ReadError ? reason.message : GENERIC;
 }

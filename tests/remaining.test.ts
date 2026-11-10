@@ -1,11 +1,11 @@
-// Saldo restante: a barra da janela enche conforme o saldo, nunca com o uso.
+// Remaining balance: the window bar fills with the balance, never with usage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { QuotaPanel } from "../src/panel.ts";
 import { Monitor } from "../src/service.ts";
 import { parseCodex } from "../src/providers.ts";
 
-test("OpenAI: painel mostra saldo restante nas janelas de horas e semanal", async () => {
+test("OpenAI: the panel shows the remaining balance in the hourly and weekly windows", async () => {
   const now = Date.now() / 1000;
   const snapshot = parseCodex({ rateLimits: {
     primary: { usedPercent: 8, windowDurationMins: 300, resetsAt: now + 3600 },
@@ -17,7 +17,7 @@ test("OpenAI: painel mostra saldo restante nas janelas de horas e semanal", asyn
   const panel = new QuotaPanel(monitor, theme);
   try {
     const text = panel.render(100).join("\n");
-    // 92% e 83% de saldo: barra quase cheia, sem escrever porcentagem
+    // 92% and 83% balance: bar nearly full, without printing a percentage
     assert.match(text, /█{5,7}[│░]/);
     assert.doesNotMatch(text, /\d+%/);
     assert.deepEqual(snapshot.windows.map((w) => w.used), [8, 17]);

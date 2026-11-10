@@ -1,5 +1,5 @@
-// Coletores das cotas. Só leitura: nenhuma credencial sai daqui e nenhum prompt é enviado.
-// Tempos são segundos desde a época, como nas respostas das APIs.
+// Quota collectors. Read-only: no credential leaves here and no prompt is sent.
+// Times are seconds since the epoch, as in the API responses.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -11,7 +11,7 @@ import { countdown } from "./rules.ts";
 
 export type Json = Record<string, unknown>;
 
-/** Mensagem segura para a UI: sem URL, headers ou corpo da resposta. */
+/** Safe message for the UI: no URL, headers or response body. */
 export class ReadError extends Error {}
 
 const isObject = (value: unknown): value is Json =>
@@ -19,20 +19,20 @@ const isObject = (value: unknown): value is Json =>
 
 export const nowSec = () => Date.now() / 1000;
 
-/** Identificação enviada às APIs; acompanha o nome do pacote. */
-const USER_AGENT = "pi-quota-tui/0.2";
+/** Identification sent to the APIs; matches the package name. */
+const USER_AGENT = "pi-quota-tui/0.4.2";
 
-/** Número dentro de um intervalo; percentual acima de 100 vira 100 em vez de sumir. */
+/** Number within a range; a percentage above 100 becomes 100 instead of vanishing. */
 export function clamped(value: unknown, low: number, high: number): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : undefined;
 }
 
-/** JSON com BOM (comum em arquivos gravados no Windows) também é aceito; lixo vira SyntaxError sem ecoar o conteúdo. */
+/** JSON with a BOM (common in files written on Windows) is accepted too; garbage becomes a SyntaxError without echoing the content. */
 export function parseJson(text: string): Record<string, unknown> {
   try {
     return JSON.parse(text.replace(/^\uFEFF/, "")) as Record<string, unknown>;
   } catch {
-    throw new SyntaxError("JSON inválido");
+    throw new SyntaxError("Invalid JSON");
   }
 }
 
@@ -48,7 +48,7 @@ export function epoch(value: unknown): number | undefined {
     return seconds < 253402300800 ? seconds : undefined;
   }
   if (typeof value === "string") {
-    // Sem fuso explícito, tratamos como UTC.
+    // Without an explicit timezone, treat it as UTC.
     const iso = /([zZ]|[+-]\d\d:?\d\d)$/.test(value) ? value : `${value}Z`;
     const ms = Date.parse(iso);
     return Number.isNaN(ms) ? undefined : ms / 1000;
@@ -58,7 +58,7 @@ export function epoch(value: unknown): number | undefined {
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
-/** Lê o corpo até o limite: resposta maior é cortada durante a leitura, não depois. */
+/** Reads the body up to the limit: a bigger response is cut during the read, not after. */
 async function readCapped(response: Response): Promise<string> {
   const reader = response.body?.getReader();
   if (!reader) return "";
@@ -70,14 +70,14 @@ async function readCapped(response: Response): Promise<string> {
     size += value.byteLength;
     if (size > MAX_BYTES) {
       await reader.cancel();
-      throw new ReadError("Resposta excede o limite de leitura.");
+      throw new ReadError("Response exceeds the read limit.");
     }
     chunks.push(value);
   }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-/** GET/POST JSON com timeout; sem redirects, sem proxy de ambiente, HTTP só em loopback. */
+/** GET/POST JSON with timeout; no redirects, no env proxy, HTTP only on loopback. */
 export async function readJson(
   url: string,
   options: { headers?: Record<string, string>; body?: string; timeout: number },
@@ -86,12 +86,12 @@ export async function readJson(
   try {
     parsed = new URL(url);
   } catch {
-    throw new ReadError("Endereço de quota não permitido.");
+    throw new ReadError("Quota address not allowed.");
   }
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password)
-    throw new ReadError("Endereço de quota não permitido.");
+    throw new ReadError("Quota address not allowed.");
   if (parsed.protocol === "http:" && parsed.hostname !== "127.0.0.1")
-    throw new ReadError("HTTP sem TLS permitido apenas em loopback.");
+    throw new ReadError("Plain HTTP allowed only on loopback.");
   let text: string;
   try {
     const init: RequestInit = {
@@ -102,25 +102,25 @@ export async function readJson(
     if (options.headers) init.headers = options.headers;
     if (options.body !== undefined) init.body = options.body;
     const response = await fetch(url, init);
-    if (!response.ok) throw new ReadError(`Consulta recusada (HTTP ${response.status}).`);
+    if (!response.ok) throw new ReadError(`Query refused (HTTP ${response.status}).`);
     text = await readCapped(response);
   } catch (error) {
     if (error instanceof ReadError) throw error;
-    throw new ReadError("Fonte indisponível ou tempo de consulta esgotado.");
+    throw new ReadError("Source unavailable or the query timed out.");
   }
   let data: unknown;
   try {
     data = parseJson(text);
   } catch {
-    throw new ReadError("Resposta de quota inválida.");
+    throw new ReadError("Invalid quota response.");
   }
-  if (!isObject(data)) throw new ReadError("Formato de quota não reconhecido.");
+  if (!isObject(data)) throw new ReadError("Unrecognized quota format.");
   return data;
 }
 
-// --- credenciais: auth.json do Pi (somente se privado) primeiro, variáveis de ambiente como fallback ---
+// --- credentials: Pi's auth.json (only if private) first, environment variables as fallback ---
 
-// Resolvido a cada chamada: HOME pode mudar (testes, sessões diferentes).
+// Resolved on every call: HOME may change (tests, different sessions).
 const piAuth = () => join(homedir(), ".pi", "agent", "auth.json");
 
 async function authFile(): Promise<Json> {
@@ -149,7 +149,7 @@ export async function secret(envNames: string[], section: string): Promise<strin
   return "";
 }
 
-/** Token OAuth guardado pelo login do pi (`type: "oauth"`); vazio quando a seção é api key ou não existe. */
+/** OAuth token saved by the pi login (`type: "oauth"`); empty when the section is an api key or missing. */
 async function oauthAccess(section: string): Promise<string> {
   const entry = await authEntry(section);
   const token = entry.type === "oauth" ? entry.access : undefined;
@@ -160,11 +160,11 @@ function disabled(id: string, name: string, source: string, error: string): Snap
   return { id, name, windows: [], source, error, disabled: true };
 }
 
-// --- OpenCode Go: assinatura, não sessões nem saldo Zen ---
+// --- OpenCode Go: subscription, not sessions nor Zen balance ---
 
 const OPENCODE_URL = "https://opencode.ai/zen/go/v1/usage";
-// O mes da OpenCode renova no aniversario da assinatura (28..31 dias); 30 dias basta para o ritmo.
-// shortcut: erro de ate ~2% do ciclo no ritmo da mensal, corrigir se a API informar o inicio.
+// OpenCode's month renews on the subscription anniversary (28..31 days); 30 days is enough for the pace.
+// shortcut: up to ~2% cycle error in the monthly pace, fix if the API reports the start.
 const MONTHLY = 30 * 86400;
 
 export function parseOpencode(root: Json, now: number): Snapshot {
@@ -172,9 +172,9 @@ export function parseOpencode(root: Json, now: number): Snapshot {
   const windows: Window[] = [];
   if (isObject(usage)) {
     for (const [key, label, duration] of [
-      ["rolling", "5 horas", 18000],
-      ["weekly", "Semanal", 604800],
-      ["monthly", "Mensal", MONTHLY],
+      ["rolling", "5 hours", 18000],
+      ["weekly", "Weekly", 604800],
+      ["monthly", "Monthly", MONTHLY],
     ] as const) {
       const item = usage[key];
       if (!isObject(item)) continue;
@@ -182,14 +182,14 @@ export function parseOpencode(root: Json, now: number): Snapshot {
       if (used !== undefined) windows.push({ label, used, resetsAt: epoch(item.resetsAt), duration });
     }
   }
-  if (!windows.length) throw new ReadError("OpenCode não informou janelas de quota reconhecidas.");
+  if (!windows.length) throw new ReadError("OpenCode did not report any recognized quota window.");
   return { id: "opencode", name: "OpenCode Go", windows, updatedAt: now, source: "OpenCode Go / usage" };
 }
 
 async function collectOpencode(): Promise<Snapshot[]> {
   const key = await secret(["OPENCODE_GO_KEY"], "opencode-go");
   if (!key)
-    return [disabled("opencode", "OpenCode Go", "OpenCode Go / usage", "Sem credencial: use a entrada `opencode-go` em ~/.pi/agent/auth.json (ou OPENCODE_GO_KEY).")];
+    return [disabled("opencode", "OpenCode Go", "OpenCode Go / usage", "No credential: set the `opencode-go` entry in ~/.pi/agent/auth.json (or OPENCODE_GO_KEY).")];
   const root = await readJson(OPENCODE_URL, {
     headers: { Authorization: `Bearer ${key}`, "User-Agent": "opencode/1.18.30" },
     timeout: 10,
@@ -197,7 +197,7 @@ async function collectOpencode(): Promise<Snapshot[]> {
   return [parseOpencode(root, nowSec())];
 }
 
-// --- CommandCode: saldo de créditos; a janela mensal é saldo + consumido ---
+// --- CommandCode: credit balance; the monthly window is balance + consumed ---
 
 const CC_BASE = "https://api.commandcode.ai/alpha";
 
@@ -210,7 +210,7 @@ function commandcodeWindow(limits: Json, key: string, label: string, duration: n
   return { label, used: Math.min(100, (used / cap) * 100), resetsAt: epoch(item.resetAt), duration };
 }
 
-/** Próximo dia de virada (UTC), limitado a 28 para existir em todo mês. */
+/** Next reset day (UTC), capped at 28 so it exists in every month. */
 export function nextMonthlyReset(day: number, now: number): number {
   const moment = new Date(now * 1000);
   const clamped = Math.min(Math.max(day, 1), 28);
@@ -221,14 +221,14 @@ export function nextMonthlyReset(day: number, now: number): number {
 
 export function parseCommandcode(credits: Json, summary: Json | undefined, now: number, resetDay = 16): Snapshot {
   const wallet = credits.credits;
-  if (!isObject(wallet)) throw new ReadError("CommandCode não informou créditos.");
+  if (!isObject(wallet)) throw new ReadError("CommandCode did not report credits.");
   const monthly = num(wallet.monthlyCredits, 0, 1e12) ?? 0;
   const purchased = num(wallet.purchasedCredits, 0, 1e12) ?? 0;
   const free = num(wallet.freeCredits, 0, 1e12) ?? 0;
   const limits = isObject(credits.windowLimits) ? credits.windowLimits : undefined;
   const windows: Window[] = [];
   if (limits) {
-    for (const [key, label, duration] of [["fiveHour", "5 horas", 18000], ["weekly", "Semanal", 604800]] as const) {
+    for (const [key, label, duration] of [["fiveHour", "5 hours", 18000], ["weekly", "Weekly", 604800]] as const) {
       const window = commandcodeWindow(limits, key, label, duration);
       if (window) windows.push(window);
     }
@@ -236,16 +236,16 @@ export function parseCommandcode(credits: Json, summary: Json | undefined, now: 
   const used = summary ? num(summary.totalMonthlyCredits, 0, 1e12) : undefined;
   const cap = monthly + (used ?? 0);
   if (cap > 0)
-    windows.push({ label: "Mensal", used: Math.min(100, ((cap - monthly) / cap) * 100), resetsAt: nextMonthlyReset(resetDay, now) });
+    windows.push({ label: "Monthly", used: Math.min(100, ((cap - monthly) / cap) * 100), resetsAt: nextMonthlyReset(resetDay, now) });
   const balance = monthly + purchased + free;
-  let note = `Saldo ${balance.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} créditos`;
-  if (!windows.some((w) => w.label !== "Mensal")) note += " | sem janela de 5h/semanal nesta conta";
+  let note = `Balance ${balance.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} credits`;
+  if (!windows.some((w) => w.label !== "Monthly")) note += " | no 5h/weekly window on this account";
   return { id: "commandcode", name: "CommandCode", windows, updatedAt: now, source: "CommandCode / billing", note };
 }
 
 async function collectCommandcode(): Promise<Snapshot[]> {
   const key = await secret(["COMMAND_CODE_API_KEY", "COMMANDCODE_API_KEY"], "commandcode");
-  if (!key) return [disabled("commandcode", "CommandCode", "CommandCode / billing", "Sem credencial: use a entrada `commandcode` em ~/.pi/agent/auth.json (ou COMMAND_CODE_API_KEY).")];
+  if (!key) return [disabled("commandcode", "CommandCode", "CommandCode / billing", "No credential: set the `commandcode` entry in ~/.pi/agent/auth.json (or COMMAND_CODE_API_KEY).")];
   const headers = { Accept: "application/json", "User-Agent": USER_AGENT, Authorization: `Bearer ${key}` };
   const credits = await readJson(`${CC_BASE}/billing/credits`, { headers, timeout: 10 });
   const summary = await readJson(`${CC_BASE}/usage/summary`, { headers, timeout: 10 }).catch(() => undefined);
@@ -253,7 +253,7 @@ async function collectCommandcode(): Promise<Snapshot[]> {
   return [parseCommandcode(credits, summary, nowSec(), Number.isFinite(day) ? day : 16)];
 }
 
-// --- Antigravity / Cloud Code: OAuth próprio, sem proxy local ---
+// --- Antigravity / Cloud Code: own OAuth, no local proxy ---
 
 const AGY_SOURCE = "Antigravity / Cloud Code";
 const AGY_PROJECT = "aicode-consumers";
@@ -262,18 +262,18 @@ const AGY_QUOTA_URLS = [
   "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
   "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 ];
-// Credencial do CLI Antigravity, a mesma que o proxy local usava. Ela vai publicada no pacote por
-// decisão do autor: se o Google revogar ou limitar este client, este caminho para de funcionar.
+// Antigravity CLI credential, the same one the local proxy used. It is published in the package by
+// the author's decision: if Google revokes or restricts this client, this path stops working.
 const AGY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
 const AGY_CLIENT_SECRET = "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";
-// O Cloud Code recusa (403) quem não se identifica como o CLI; o proxy usava exatamente esta UA.
+// Cloud Code refuses (403) whoever does not identify as the CLI; the proxy used exactly this UA.
 const AGY_USER_AGENT = "antigravity/cli/1.2.16 (aidev_client; os_type=darwin; arch=arm64; auth_method=consumer)";
 
-/** Contas do Antigravity: `PI_QUOTA_TUI_AGY_ACCOUNTS` ou o arquivo que o /quota-login mantém. */
+/** Antigravity accounts: `PI_QUOTA_TUI_AGY_ACCOUNTS` or the file /quota-login keeps. */
 export const agyAccountsPath = (): string =>
   process.env.PI_QUOTA_TUI_AGY_ACCOUNTS?.trim() || join(homedir(), ".local", "share", "pi-quota-tui", "agy-accounts.json");
 
-/** accounts.json do AGY Local Proxy: só leitura, compatibilidade com quem já o tinha. */
+/** AGY Local Proxy accounts.json: read-only, compatibility with whoever already had it. */
 export const agyLegacyPath = (): string => join(homedir(), ".local", "share", "agy-local-proxy", "accounts.json");
 
 type AgyAccount = Json & { refreshToken: string };
@@ -291,22 +291,21 @@ export function parseGroups(groups: unknown): Window[] {
     const name = group.displayName
       .trim()
       .replace(/\s+models$/i, "")
-      .replace(/\band\b/g, "e")
-      // "Gemini 4 Argon" vira "Argon": a linha do modelo fica curta no painel.
+      // "Gemini 4 Argon" becomes "Argon": the model line stays short in the panel.
       .replace(/^Gemini\s+\d+(?:\.\d+)?\s+/i, "");
     for (const bucket of group.buckets) {
       if (!isObject(bucket) || bucket.disabled === true) continue;
       const fraction = clamped(bucket.remainingFraction, 0, 1);
       if (fraction === undefined) continue;
       const [label, duration]: [string, number | undefined] =
-        bucket.window === "5h" ? ["5 horas", 18000] : bucket.window === "weekly" ? ["Semanal", 604800] : ["Limite", undefined];
+        bucket.window === "5h" ? ["5 hours", 18000] : bucket.window === "weekly" ? ["Weekly", 604800] : ["Limit", undefined];
       windows.push({ label, used: (1 - fraction) * 100, resetsAt: epoch(bucket.resetTime), duration, group: name });
     }
   }
   return windows;
 }
 
-/** Contas utilizáveis: sem refreshToken não há como renovar o token, então ficam de fora. */
+/** Usable accounts: without a refreshToken the token cannot be renewed, so they stay out. */
 export function parseAgyAccounts(root: unknown): AgyAccount[] {
   if (!Array.isArray(root)) return [];
   return root
@@ -314,7 +313,7 @@ export function parseAgyAccounts(root: unknown): AgyAccount[] {
     .filter((account): account is AgyAccount => typeof account.refreshToken === "string" && account.refreshToken.trim() !== "");
 }
 
-/** JSON privado: guarda refresh tokens, então só o dono pode ler, como o auth.json. */
+/** Private JSON: holds refresh tokens, so only the owner can read it, like auth.json. */
 export async function readPrivateJson(path: string): Promise<unknown> {
   try {
     const info = await stat(path);
@@ -336,21 +335,21 @@ const googleToken = (body: Record<string, string>): Promise<Json> =>
     timeout: 10,
   });
 
-/** Client público do CLI Antigravity; o /quota-login monta a URL de consentimento com ele. */
+/** Public Antigravity CLI client; /quota-login builds the consent URL with it. */
 export const AGY_CLIENT = AGY_CLIENT_ID;
 
-/** Código do consentimento Google trocado por refresh token (login feito pela própria extensão). */
+/** Google consent code exchanged for a refresh token (login done by the extension itself). */
 export const agyLoginToken = (code: string, redirect: string, verifier: string): Promise<Json> =>
   googleToken({ code, redirect_uri: redirect, code_verifier: verifier, grant_type: "authorization_code" });
 
 export async function agyToken(refreshToken: string): Promise<string> {
   const root = await googleToken({ refresh_token: refreshToken, grant_type: "refresh_token" });
   const token = root.access_token;
-  if (typeof token !== "string" || !token) throw new ReadError("O Google não renovou o token desta conta Antigravity.");
+  if (typeof token !== "string" || !token) throw new ReadError("Google did not refresh the token for this Antigravity account.");
   return token;
 }
 
-/** O primeiro endpoint é o do dia; o segundo cobre contas que só respondem no host antigo. */
+/** The first endpoint is the daily one; the second covers accounts that only answer on the old host. */
 async function agyGroups(token: string, project: string): Promise<unknown[]> {
   let failure: ReadError | undefined;
   for (const url of AGY_QUOTA_URLS) {
@@ -361,31 +360,31 @@ async function agyGroups(token: string, project: string): Promise<unknown[]> {
         timeout: 10,
       });
       if (Array.isArray(root.groups)) return root.groups;
-      failure = new ReadError("O Cloud Code não informou grupos de quota.");
+      failure = new ReadError("Cloud Code did not report quota groups.");
     } catch (error) {
       if (!(error instanceof ReadError)) throw error;
       failure = error;
     }
   }
-  throw failure ?? new ReadError("O Cloud Code não informou grupos de quota.");
+  throw failure ?? new ReadError("Cloud Code did not report quota groups.");
 }
 
-/** Uma conta Antigravity vira um snapshot; a paga é escolhida depois por paidIndex. */
+/** One Antigravity account becomes a snapshot; the paid one is picked later by paidIndex. */
 export function agySnapshot(account: AgyAccount, index: number, groups: unknown[], now: number): Snapshot {
   const key = identityKey(account, index);
   const windows = parseGroups(groups);
   return {
     id: `antigravity/${key}`,
-    name: `Antigravity / conta ${key.slice(0, 6)}`,
+    name: `Antigravity / account ${key.slice(0, 6)}`,
     windows,
     updatedAt: now,
     source: AGY_SOURCE,
-    error: windows.length ? undefined : "Conta sem leitura de quota reconhecida.",
-    note: "Contas separadas; percentuais não são somados nem promediados.",
+    error: windows.length ? undefined : "Account has no recognized quota reading.",
+    note: "Accounts kept separate; percentages are neither summed nor averaged.",
   };
 }
 
-/** Conta paga: a apontada por PI_QUOTA_TUI_AGY_PAID (id, e-mail ou projeto) ou a com mais janelas lidas. */
+/** Paid account: the one pointed to by PI_QUOTA_TUI_AGY_PAID (id, e-mail or project) or the one with most windows read. */
 export function paidIndex(accounts: AgyAccount[], snapshots: Snapshot[], hint = ""): number {
   const wanted = hint.trim();
   if (wanted) {
@@ -405,24 +404,24 @@ export function paidIndex(accounts: AgyAccount[], snapshots: Snapshot[], hint = 
   return best;
 }
 
-/** Uma cota principal (a paga); as demais viram BONUS. Nada é somado nem promediado. */
+/** One main quota (the paid one); the others become BONUS. Nothing is summed nor averaged. */
 export function collapse(snapshots: Snapshot[], primary: number, now: number): Snapshot {
   const chosen = snapshots[primary] ?? snapshots[0];
-  if (!chosen) throw new ReadError("Nenhuma conta Antigravity disponível.");
+  if (!chosen) throw new ReadError("No Antigravity account available.");
   const others = snapshots.filter((_, index) => index !== primary);
-  const parts = [`PAGA ${(chosen.id.split("/").pop() ?? "").slice(0, 6)}`];
+  const parts = [`PAID ${(chosen.id.split("/").pop() ?? "").slice(0, 6)}`];
   const usable = others.filter((s) => s.windows.length && !s.error);
   if (usable.length) {
     const best = (label: string): string => {
       const cells = usable.flatMap((s) => s.windows.filter((w) => w.label === label).map((w) => ({ left: 100 - w.used, reset: w.resetsAt })));
-      if (!cells.length) return `${label.toLowerCase()} sem leitura`;
+      if (!cells.length) return `${label.toLowerCase()} no reading`;
       const top = cells.reduce((a, b) => (b.left > a.left ? b : a));
-      const tail = top.reset !== undefined && top.reset > now ? ` (renova ${countdown(top.reset - now)})` : "";
-      return `${label.toLowerCase()} ${top.left.toFixed(0)}% livre${tail}`;
+      const tail = top.reset !== undefined && top.reset > now ? ` (renews in ${countdown(top.reset - now)})` : "";
+      return `${label.toLowerCase()} ${top.left.toFixed(0)}% free${tail}`;
     };
-    parts.push(`BONUS ${others.length} contas: ${best("5 horas")} | ${best("Semanal")}`);
+    parts.push(`BONUS ${others.length} accounts: ${best("5 hours")} | ${best("Weekly")}`);
   } else {
-    parts.push(`BONUS ${others.length} contas sem leitura`);
+    parts.push(`BONUS ${others.length} accounts without a reading`);
   }
   if (chosen.note) parts.push(chosen.note);
   return { ...chosen, id: "antigravity", name: "Antigravity", note: parts.join(" | ") };
@@ -433,7 +432,7 @@ async function collectAntigravity(): Promise<Snapshot[]> {
   const accounts = parseAgyAccounts(await agyAccountsFile());
   if (!accounts.length)
     return [disabled("antigravity", "Antigravity", AGY_SOURCE,
-      "Sem contas Antigravity: rode /quota-login para importar do AGY ou entrar com o Google.")];
+      "No Antigravity accounts: run /quota-login to import from AGY or sign in with Google.")];
   const snapshots = await Promise.all(accounts.map(async (account, index) => {
     try {
       const token = await agyToken(account.refreshToken.trim());
@@ -442,21 +441,21 @@ async function collectAntigravity(): Promise<Snapshot[]> {
       const key = identityKey(account, index);
       return {
         id: `antigravity/${key}`,
-        name: `Antigravity / conta ${key.slice(0, 6)}`,
+        name: `Antigravity / account ${key.slice(0, 6)}`,
         windows: [],
         source: AGY_SOURCE,
-        error: error instanceof ReadError ? error.message : "Falha na leitura do Antigravity.",
+        error: error instanceof ReadError ? error.message : "Antigravity read failed.",
       } satisfies Snapshot;
     }
   }));
-  // Nenhuma conta legível: devolve os erros por conta para /quota explicar cada uma.
+  // No readable account: returns the per-account errors so /quota can explain each one.
   if (!snapshots.some((s) => s.windows.length)) return snapshots;
   return [collapse(snapshots, paidIndex(accounts, snapshots, process.env.PI_QUOTA_TUI_AGY_PAID ?? ""), now)];
 }
 
-// --- OpenAI/Codex: 'codex app-server --stdio' com a sessão já logada (sem tokens aqui) ---
+// --- OpenAI/Codex: 'codex app-server --stdio' with the session already logged in (no tokens here) ---
 
-const CODEX_DURATIONS: Record<number, [string, number]> = { 300: ["5 horas", 18000], 10080: ["Semanal", 604800] };
+const CODEX_DURATIONS: Record<number, [string, number]> = { 300: ["5 hours", 18000], 10080: ["Weekly", 604800] };
 
 function codexBucket(result: Json): Json {
   const byId = result.rateLimitsByLimitId;
@@ -466,7 +465,7 @@ function codexBucket(result: Json): Json {
     if (first) return first;
   }
   if (isObject(result.rateLimits)) return result.rateLimits;
-  throw new ReadError("O Codex não informou limites de quota para esta conta.");
+  throw new ReadError("Codex did not report quota limits for this account.");
 }
 
 function codexWindow(item: unknown, fallback: string): Window | undefined {
@@ -475,26 +474,26 @@ function codexWindow(item: unknown, fallback: string): Window | undefined {
   if (used === undefined) return undefined;
   const minutes = typeof item.windowDurationMins === "number" ? item.windowDurationMins : undefined;
   const known = minutes === undefined ? undefined : CODEX_DURATIONS[minutes];
-  // Duração fora da tabela: rótulo com a duração real, sem chamar de "5 horas".
-  const label = known?.[0] ?? (minutes === undefined ? fallback : "Janela de " + minutes + " min");
+  // Duration outside the table: label with the real duration, without calling it "5 hours".
+  const label = known?.[0] ?? (minutes === undefined ? fallback : minutes + " min window");
   return { label, used, resetsAt: epoch(item.resetsAt), duration: known?.[1] };
 }
 
 export function parseCodex(result: Json, now: number): Snapshot {
   const bucket = codexBucket(result);
-  const windows = [codexWindow(bucket.primary, "5 horas"), codexWindow(bucket.secondary, "Semanal")].filter(
+  const windows = [codexWindow(bucket.primary, "5 hours"), codexWindow(bucket.secondary, "Weekly")].filter(
     (w): w is Window => w !== undefined,
   );
-  if (!windows.length) throw new ReadError("O Codex informou limites sem percentual utilizável.");
+  if (!windows.length) throw new ReadError("Codex reported limits without a usable percentage.");
   const credits = result.rateLimitResetCredits;
   const count = isObject(credits) ? credits.availableCount : undefined;
-  const note = typeof count === "number" && Number.isInteger(count) && count > 0 ? `${count} reset(s) de limite disponível(is)` : "";
+  const note = typeof count === "number" && Number.isInteger(count) && count > 0 ? `${count} limit reset(s) available` : "";
   return { id: "openai", name: "OpenAI Codex", windows, updatedAt: now, source: "codex app-server", note };
 }
 
 class MissingBinary extends ReadError {}
 
-/** Chaves de quota não vão para o subprocesso: o Codex não precisa delas. */
+/** Quota keys do not go to the subprocess: Codex does not need them. */
 const FOREIGN_SECRETS = ["OPENCODE_GO_KEY", "COMMAND_CODE_API_KEY", "COMMANDCODE_API_KEY"];
 
 function codexEnv(): NodeJS.ProcessEnv {
@@ -515,12 +514,12 @@ function codexRateLimits(): Promise<Json> {
       if (error) reject(error);
       else resolve(value ?? {});
     };
-    const noAnswer = () => new ReadError("O Codex não respondeu à leitura de quotas.");
+    const noAnswer = () => new ReadError("Codex did not answer the quota read.");
     const timer = setTimeout(() => finish(noAnswer()), 20_000);
     proc.on("error", (error: NodeJS.ErrnoException) =>
-      finish(error.code === "ENOENT" ? new MissingBinary("Codex CLI não encontrado no PATH.") : noAnswer()));
+      finish(error.code === "ENOENT" ? new MissingBinary("Codex CLI not found on PATH.") : noAnswer()));
     proc.on("close", () => finish(noAnswer()));
-    proc.stdin?.on("error", () => finish(noAnswer())); // EPIPE se o processo morrer antes
+    proc.stdin?.on("error", () => finish(noAnswer())); // EPIPE if the process dies first
     createInterface({ input: proc.stdout! }).on("line", (line) => {
       let message: unknown;
       try {
@@ -529,7 +528,7 @@ function codexRateLimits(): Promise<Json> {
         return;
       }
       if (!isObject(message) || message.id !== 2) return;
-      if (isObject(message.error)) return finish(new ReadError("O Codex recusou a leitura de quotas."));
+      if (isObject(message.error)) return finish(new ReadError("Codex refused the quota read."));
       return isObject(message.result) ? finish(undefined, message.result) : finish(noAnswer());
     });
     const requests = [
@@ -550,10 +549,10 @@ async function collectOpenai(): Promise<Snapshot[]> {
   }
 }
 
-// --- Claude: histórico local do app desktop; sem rede ---
+// --- Claude: local history of the desktop app; no network ---
 
-const CLAUDE_SOURCE = "App Claude / histórico do plano";
-const CLAUDE_NO_DATA = "Sem dados do Claude: abra o app desktop ou faça login (Claude Pro/Max) no pi.";
+const CLAUDE_SOURCE = "Claude app / plan history";
+const CLAUDE_NO_DATA = "No Claude data: open the desktop app or log in (Claude Pro/Max) in pi.";
 const FIVE_HOURS = 18000;
 const WEEKLY = 604800;
 
@@ -566,8 +565,8 @@ interface Sample {
 
 type SampleKey = "fh" | "sd";
 
-// shortcut: o caminho OAuth (api/oauth/usage) não tem teste de integração — só parseOauthUsage é
-// testado, porque a chamada exige login Claude Pro/Max real; cobrir quando houver credencial de teste.
+// shortcut: the OAuth path (api/oauth/usage) has no integration test - only parseOauthUsage is
+// tested, because the call needs a real Claude Pro/Max login; cover it once there is a test credential.
 function historyCandidates(): string[] {
   const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return [
@@ -584,7 +583,7 @@ async function historyPath(): Promise<string | undefined> {
       const info = await stat(path);
       if (info.isFile()) found.push({ path, mtime: info.mtimeMs });
     } catch {
-      // ausente: ignora
+      // missing: ignore
     }
   }
   return found.sort((a, b) => b.mtime - a.mtime)[0]?.path;
@@ -595,10 +594,10 @@ async function readSamples(path: string): Promise<Sample[]> {
   try {
     raw = parseJson(await readFile(path, "utf8"));
   } catch {
-    throw new ReadError("Não foi possível ler o histórico do app Claude.");
+    throw new ReadError("Could not read the Claude app history.");
   }
   const items = isObject(raw) ? raw.samples : undefined;
-  if (!Array.isArray(items)) throw new ReadError("Histórico do Claude em formato desconhecido.");
+  if (!Array.isArray(items)) throw new ReadError("Claude history in an unknown format.");
   const rows: Sample[] = [];
   for (const item of items) {
     if (!isObject(item) || typeof item.t !== "number") continue;
@@ -611,7 +610,7 @@ async function readSamples(path: string): Promise<Sample[]> {
     });
   }
   rows.sort((a, b) => a.at - b.at);
-  if (!rows.length) throw new ReadError("O app Claude ainda não registrou uso do plano.");
+  if (!rows.length) throw new ReadError("The Claude app has not recorded plan usage yet.");
   const org = rows[rows.length - 1].org;
   return rows.filter((row) => row.org === org);
 }
@@ -621,13 +620,13 @@ function latestIndex(rows: Sample[], key: SampleKey): number | undefined {
   return undefined;
 }
 
-/** Reset da janela de 5h = meio do intervalo sem amostras + duração. Semanal nunca é inventado. */
+/** 5h window reset = middle of the gap without samples + duration. Weekly is never invented. */
 export function estimateReset(rows: Sample[], key: SampleKey, index: number, now: number, duration: number): [number | undefined, string] {
-  if (duration === WEEKLY) return [undefined, "aguardando horário oficial de renovação"];
+  if (duration === WEEKLY) return [undefined, "waiting for the official renewal time"];
   const latest = rows[index];
   const used = latest[key];
-  if (now - latest.at > duration) return [undefined, "janela expirou desde a última amostra"];
-  if (used === undefined || used <= 0) return [undefined, "janela inicia no próximo uso"];
+  if (now - latest.at > duration) return [undefined, "window expired since the last sample"];
+  if (used === undefined || used <= 0) return [undefined, "window starts on the next use"];
   let first = index;
   let previous: number | undefined;
   for (let j = index - 1; j >= 0; j--) {
@@ -640,8 +639,8 @@ export function estimateReset(rows: Sample[], key: SampleKey, index: number, now
     first = j;
   }
   if (previous === undefined || rows[first].at - rows[previous].at > 7200)
-    return [undefined, "horário de renovação indisponível"];
-  return [(rows[previous].at + rows[first].at) / 2 + duration, "reset estimado pelo início da janela"];
+    return [undefined, "renewal time unavailable"];
+  return [(rows[previous].at + rows[first].at) / 2 + duration, "reset estimated from the window start"];
 }
 
 async function readHistory(now: number): Promise<Snapshot | undefined> {
@@ -651,7 +650,7 @@ async function readHistory(now: number): Promise<Snapshot | undefined> {
   const windows: Window[] = [];
   const hints: string[] = [];
   let stale = false;
-  for (const [key, label, duration] of [["fh", "5 horas", FIVE_HOURS], ["sd", "Semanal", WEEKLY]] as const) {
+  for (const [key, label, duration] of [["fh", "5 hours", FIVE_HOURS], ["sd", "Weekly", WEEKLY]] as const) {
     const index = latestIndex(rows, key);
     if (index === undefined) continue;
     const [resetsAt, hint] = estimateReset(rows, key, index, now, duration);
@@ -661,7 +660,7 @@ async function readHistory(now: number): Promise<Snapshot | undefined> {
   }
   let note = CLAUDE_SOURCE;
   if (hints.length) note += ` | ${[...new Set(hints)].join(" | ")}`;
-  if (stale) note += " | abra o app Claude para atualizar";
+  if (stale) note += " | open the Claude app to refresh";
   return {
     id: "claude",
     name: "Claude Code",
@@ -675,15 +674,15 @@ async function readHistory(now: number): Promise<Snapshot | undefined> {
 
 const noClaudeData = (): Snapshot => disabled("claude", "Claude Code", CLAUDE_SOURCE, CLAUDE_NO_DATA);
 
-// --- Claude: OAuth da assinatura (fallback quando não há arquivo local) ---
+// --- Claude: subscription OAuth (fallback when there is no local file) ---
 
 const ANTHROPIC_USAGE = "https://api.anthropic.com/api/oauth/usage";
 
-/** Uso da assinatura pelo OAuth: utilization 0..100 e resets_at em ISO. */
+/** Subscription usage through OAuth: utilization 0..100 and resets_at in ISO. */
 export function parseOauthUsage(root: Json, now: number): Snapshot {
   const windows: Window[] = [];
   const locked: string[] = [];
-  for (const [key, label, duration] of [["five_hour", "5 horas", FIVE_HOURS], ["seven_day", "Semanal", WEEKLY]] as const) {
+  for (const [key, label, duration] of [["five_hour", "5 hours", FIVE_HOURS], ["seven_day", "Weekly", WEEKLY]] as const) {
     const item = root[key];
     if (!isObject(item)) continue;
     const used = clamped(item.utilization, 0, 100);
@@ -691,9 +690,9 @@ export function parseOauthUsage(root: Json, now: number): Snapshot {
     windows.push({ label, used, resetsAt: epoch(item.resets_at), duration });
     if (typeof item.locked_reason === "string" && item.locked_reason) locked.push(label);
   }
-  if (!windows.length) throw new ReadError("O Claude (OAuth) não informou janelas de quota.");
-  const parts = ["OAuth do pi / uso da assinatura"];
-  if (locked.length) parts.push(`bloqueado: ${locked.join(", ")}`);
+  if (!windows.length) throw new ReadError("Claude (OAuth) did not report any quota window.");
+  const parts = ["pi OAuth / subscription usage"];
+  if (locked.length) parts.push(`locked: ${locked.join(", ")}`);
   return { id: "claude", name: "Claude Code", windows, updatedAt: now, source: "Claude / OAuth usage", note: parts.join(" | ") };
 }
 
@@ -714,14 +713,14 @@ async function readOauthUsage(now: number): Promise<Snapshot | undefined> {
   return parseOauthUsage(root, now);
 }
 
-/** Histórico do app desktop; erro local só aparece se o OAuth também não render nada. */
+/** Desktop app history; a local error only shows if OAuth also yields nothing. */
 async function localClaude(now: number): Promise<{ snapshot?: Snapshot; error?: Snapshot }> {
   if (!(await historyPath())) return {};
   try {
     const desktop = await readHistory(now);
     return desktop?.windows.length ? { snapshot: desktop } : {};
   } catch (error) {
-    const message = error instanceof ReadError ? error.message : "Falha ao ler o histórico do app Claude.";
+    const message = error instanceof ReadError ? error.message : "Failed to read the Claude app history.";
     return { error: { id: "claude", name: "Claude Code", windows: [], source: CLAUDE_SOURCE, error: message } };
   }
 }
@@ -740,7 +739,7 @@ async function collectClaude(): Promise<Snapshot[]> {
   return [local.error ?? noClaudeData()];
 }
 
-// --- registro dos coletores, por provedor ---
+// --- collector registry, per provider ---
 
 export const COLLECTORS: Record<string, () => Promise<Snapshot[]>> = {
   antigravity: collectAntigravity,

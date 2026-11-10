@@ -1,11 +1,11 @@
-// Dados normalizados: nunca guardam credenciais nem respostas brutas.
+// Normalized data: never stores credentials or raw responses.
 
 export interface Window {
   label: string;
-  /** Percentual usado, 0..100. */
+  /** Percentage used, 0..100. */
   used: number;
   resetsAt?: number;
-  /** Segundos do ciclo; sem ele a janela não tem ritmo nem previsão. */
+  /** Seconds of the cycle; without it the window has no pace and no forecast. */
   duration?: number;
   group?: string;
   estimated?: boolean;

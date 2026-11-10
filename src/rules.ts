@@ -1,18 +1,18 @@
-// Ritmo e saúde comparam uso com o tempo que falta até a renovação.
+// Pace and health compare usage with the time left until renewal.
 import { outdated, type Snapshot, type Window } from "./models.ts";
 
-/** Hierarquia mensal > semanal > 5h: esgotar a de cima torna as de baixo inuteis. */
-const RANKS: Record<string, number> = { Mensal: 3, Semanal: 2, "5 horas": 1 };
+/** Hierarchy monthly > weekly > 5h: exhausting the one above makes the ones below useless. */
+const RANKS: Record<string, number> = { Monthly: 3, Weekly: 2, "5 hours": 1 };
 
 /**
- * Janelas que valem a pena mostrar: nada abaixo de uma janela esgotada do mesmo grupo aparece.
- * Rank desconhecido ("Limite", familias do AGY) nunca e escondido nem esgota nada.
+ * Windows worth showing: nothing below an exhausted window of the same group shows up.
+ * An unknown rank ("Limit", AGY families) is never hidden and never exhausts anything.
  */
 export function visible(windows: Window[]): Window[] {
   const dead = new Map<string, number>();
   for (const w of windows) {
     const rank = RANKS[w.label];
-    // Limiar do que a tela mostra como 0% restante: a API devolve 99.96, nao 100 exato.
+    // Threshold for what the screen shows as 0% left: the API returns 99.96, not exactly 100.
     if (Math.round(w.used) < 100 || rank === undefined) continue;
     const key = w.group ?? "";
     dead.set(key, Math.max(dead.get(key) ?? 0, rank));
@@ -22,13 +22,14 @@ export function visible(windows: Window[]): Window[] {
 }
 
 /**
- * O que está esgotado e quando volta: por grupo, vale a janela de maior hierarquia (a que trava
- * as de baixo), e no empate a que renova por último. Grupos com rank desconhecido nunca esgotam.
+ * What is exhausted and when it comes back: per group, the highest-ranked window wins (the one
+ * that blocks the ones below), and on a tie the one that renews last. Groups with an unknown
+ * rank never exhaust.
  */
 export interface Expired {
   group?: string;
   resetsAt?: number;
-  /** Segundos do ciclo; calibra se a espera é longa ou logo ali. */
+  /** Cycle seconds; calibrates whether the wait is long or soon. */
   duration?: number;
   estimated?: boolean;
 }
@@ -60,23 +61,23 @@ export function delta(w: Window, now: number, stale = false): number | undefined
 }
 
 export function paceLabel(value: number | undefined): string {
-  if (value === undefined) return "RITMO INDISPONIVEL";
-  if (value > 3) return `ADIANTADO ${Math.round(value)}%`;
-  if (value < -3) return `FOLGA ${Math.round(-value)}%`;
-  return "NO RITMO";
+  if (value === undefined) return "PACE UNAVAILABLE";
+  if (value > 3) return `${Math.round(value)}% AHEAD`;
+  if (value < -3) return `${Math.round(-value)}% SLACK`;
+  return "ON PACE";
 }
 
 export function forecast(w: Window, now: number, stale = false): string {
   const reference = pace(w, now, stale);
   if (reference === undefined || w.duration === undefined || reference < 2 || w.used < 1) return "";
-  if (w.used >= 100) return "COTA ESGOTADA; aguardando renovacao";
+  if (w.used >= 100) return "QUOTA EXHAUSTED; waiting for renewal";
   const projected = (w.used * 100) / reference;
   if (projected > 100) {
     const elapsed = (w.duration * reference) / 100;
     const left = Math.max(0, elapsed * (100 / w.used - 1));
-    return `~esgota em ${countdown(left)} antes de renovar`;
+    return `~runs out in ${countdown(left)} before renewal`;
   }
-  return `~sobram ${Math.max(0, 100 - projected).toFixed(0)}% na renovacao`;
+  return `~${Math.max(0, 100 - projected).toFixed(0)}% left at renewal`;
 }
 
 export function countdown(seconds: number): string {
@@ -87,24 +88,24 @@ export function countdown(seconds: number): string {
 }
 
 export function resetText(w: Window, now: number): string {
-  if (w.resetsAt === undefined) return "RENOVA: horario indisponivel";
-  if (w.resetsAt <= now) return "AGUARDANDO NOVA LEITURA";
-  return "RENOVA EM " + (w.estimated ? "~" : "") + countdown(w.resetsAt - now);
+  if (w.resetsAt === undefined) return "RESETS: time unavailable";
+  if (w.resetsAt <= now) return "WAITING FOR NEW DATA";
+  return "RESETS IN " + (w.estimated ? "~" : "") + countdown(w.resetsAt - now);
 }
 
-/** Rótulo de saúde da quota. */
+/** Health label of the quota. */
 export function health(s: Snapshot, now: number): string {
-  if (!s.windows.length) return "SEM SINAL";
-  if (outdated(s, now)) return "DESATUALIZADO";
-  // Saldo disponível relativo à fração do ciclo que falta sustentar.
+  if (!s.windows.length) return "NO SIGNAL";
+  if (outdated(s, now)) return "OUTDATED";
+  // Balance left relative to the fraction of the cycle still to be covered.
   const coverage = Math.min(...s.windows.map((w) => {
     const remaining = (100 - w.used) / 100;
     const elapsed = pace(w, now);
-    // Sem ciclo conhecido, usa saldo absoluto: 60/50/37,5% como faixas.
+    // Without a known cycle, uses absolute balance: 60/50/37.5% as bands.
     return remaining / (elapsed === undefined ? 0.5 : 1 - elapsed / 100);
   }));
-  if (coverage <= 0.75) return "ATENCAO";
-  if (coverage < 1) return "COTA APERTADA";
-  if (coverage > 1.2) return "FOLGA";
-  return "MONITORANDO";
+  if (coverage <= 0.75) return "LOW";
+  if (coverage < 1) return "TIGHT";
+  if (coverage > 1.2) return "SLACK";
+  return "ON TRACK";
 }
