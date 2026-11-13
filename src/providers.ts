@@ -6,6 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Snapshot, Window } from "./models.ts";
 import { countdown } from "./rules.ts";
 
@@ -120,8 +121,8 @@ export async function readJson(
 
 // --- credentials: Pi's auth.json (only if private) first, environment variables as fallback ---
 
-// Resolved on every call: HOME may change (tests, different sessions).
-const piAuth = () => join(homedir(), ".pi", "agent", "auth.json");
+// Resolved on every call: pi's agent dir follows PI_CODING_AGENT_DIR and HOME, which may change.
+const piAuth = () => join(getAgentDir(), "auth.json");
 
 async function authFile(): Promise<Json> {
   try {
@@ -155,10 +156,19 @@ export async function secret(envNames: string[], section: string): Promise<strin
  * using an expired token and getting HTTP 401.
  */
 type OAuthRefresh = (section: string) => Promise<string | undefined>;
-let oauthRefresh: OAuthRefresh | undefined;
+// One per live session: two sessions in the same process must not invalidate each other's ctx.
+const oauthRefresh = new Set<OAuthRefresh>();
 
-export function setOAuthRefresh(refresh: OAuthRefresh | undefined): void {
-  oauthRefresh = refresh;
+/** Registers a token source (undefined clears all, as tests do); the result removes it on shutdown. */
+export function setOAuthRefresh(refresh: OAuthRefresh | undefined): () => void {
+  if (!refresh) {
+    oauthRefresh.clear();
+    return () => {};
+  }
+  oauthRefresh.add(refresh);
+  return () => {
+    oauthRefresh.delete(refresh);
+  };
 }
 
 /**
@@ -168,7 +178,12 @@ export function setOAuthRefresh(refresh: OAuthRefresh | undefined): void {
 export async function oauthAccess(section: string): Promise<string> {
   const entry = await authEntry(section);
   if (entry.type !== "oauth") return "";
-  const fresh = await oauthRefresh?.(section).catch(() => undefined);
+  let fresh: string | undefined;
+  // A source whose session is gone fails; the next live one still answers.
+  for (const refresh of oauthRefresh) {
+    fresh = await refresh(section).catch(() => undefined);
+    if (fresh) break;
+  }
   const token = fresh || entry.access;
   return typeof token === "string" ? token.trim() : "";
 }
@@ -587,8 +602,8 @@ interface Sample {
 
 type SampleKey = "fh" | "sd";
 
-// shortcut: the OAuth path (api/oauth/usage) has no integration test - only parseOauthUsage is
-// tested, because the call needs a real Claude Pro/Max login; cover it once there is a test credential.
+// shortcut: the OAuth path (api/oauth/usage) is tested against a mocked API, not a real Claude
+// Pro/Max login, which needs a test credential; cover it end to end once there is one.
 function historyCandidates(): string[] {
   const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return [

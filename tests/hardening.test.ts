@@ -58,6 +58,7 @@ async function sandbox(fn: (home: string) => Promise<void>, extra: Record<string
         OPENCODE_GO_KEY: undefined,
         COMMAND_CODE_API_KEY: undefined,
         COMMANDCODE_API_KEY: undefined,
+        PI_CODING_AGENT_DIR: undefined,
         ...extra,
       },
       () => fn(home),
@@ -394,6 +395,23 @@ test("Claude OAuth: a failed refresh and an api-key section fall back to auth.js
       assert.equal(await oauthAccess("anthropic"), "");
     } finally {
       setOAuthRefresh(undefined);
+    }
+  }));
+
+test("Claude OAuth: two sessions keep their own token source and one shutdown keeps the other", () =>
+  sandbox(async (home) => {
+    await writeAuth(home, JSON.stringify({ anthropic: { type: "oauth", access: "from-auth-json" } }));
+    const stopA = setOAuthRefresh(async () => {
+      throw new Error("this ctx is stale after session replacement");
+    });
+    const stopB = setOAuthRefresh(async () => "from-b");
+    try {
+      // A failing source is skipped, not fatal.
+      assert.equal(await oauthAccess("anthropic"), "from-b");
+      stopB();
+      assert.equal(await oauthAccess("anthropic"), "from-auth-json");
+    } finally {
+      stopA();
     }
   }));
 

@@ -1,7 +1,7 @@
 // Antigravity accounts in the TUI's own file: /quota-login imports what AGY already had and,
 // when the refresh token is no longer valid, runs the Google login here (OAuth loopback + PKCE).
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, writeFile, chmod } from "node:fs/promises";
+import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { dirname } from "node:path";
@@ -21,12 +21,17 @@ export type Notify = (message: string, level?: "info" | "warning" | "error") => 
 const SCOPE = "openid email profile https://www.googleapis.com/auth/cloud-platform";
 const TIMEOUT_MS = 5 * 60_000;
 
-/** Writes the account list with mode 600: they are refresh tokens. */
+/**
+ * Writes the account list with mode 600: they are refresh tokens.
+ * Temp file plus rename: a read during the save never sees half a file, and a crash loses nothing.
+ */
 export async function saveAccounts(target: string, accounts: readonly Json[]): Promise<void> {
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-  await writeFile(target, JSON.stringify(accounts, null, 2) + "\n", { mode: 0o600 });
-  // writeFile does not tighten the mode of an existing file.
-  await chmod(target, 0o600);
+  const temp = `${target}.${process.pid}.tmp`;
+  await writeFile(temp, JSON.stringify(accounts, null, 2) + "\n", { mode: 0o600 });
+  // writeFile does not tighten the mode of a temp file left by an earlier crash.
+  await chmod(temp, 0o600);
+  await rename(temp, target);
 }
 
 /** Only the accounts whose refresh token Google still renews. */

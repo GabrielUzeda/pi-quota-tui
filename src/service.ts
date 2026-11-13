@@ -6,7 +6,7 @@ const INTERVAL_MS = 120_000;
 const COLLECT_TIMEOUT_MS = 25_000;
 const PENDING = "Waiting for the first read.";
 const GENERIC = "Internal read failure; last quota kept.";
-const NAMES: Record<string, string> = {
+export const NAMES: Record<string, string> = {
   antigravity: "Antigravity",
   opencode: "OpenCode Go",
   openai: "OpenAI Codex",
@@ -19,9 +19,13 @@ type Collector = () => Promise<Snapshot[]>;
 export class Monitor {
   private readonly collectors: Record<string, Collector>;
   private readonly timeoutMs: number;
+  private intervalMs = INTERVAL_MS;
+  private hidden = new Set<string>();
   private data = new Map<string, Snapshot[]>();
   private inFlight?: Promise<void>;
   private timer?: ReturnType<typeof setInterval>;
+  /** Called after every provider update; the panel asks pi for a redraw with it. */
+  onUpdate?: () => void;
 
   constructor(collectors: Record<string, Collector> = COLLECTORS, timeoutMs = COLLECT_TIMEOUT_MS) {
     this.collectors = collectors;
@@ -41,8 +45,21 @@ export class Monitor {
   start(): void {
     if (this.timer) return;
     void this.refresh();
-    this.timer = setInterval(() => void this.refresh(), INTERVAL_MS);
+    this.timer = setInterval(() => void this.refresh(), this.intervalMs);
     this.timer.unref?.();
+  }
+
+  /** Applies the user preferences; a running poll restarts with the new interval. */
+  configure(options: { refreshSeconds: number; hiddenProviders: readonly string[] }): void {
+    this.intervalMs = options.refreshSeconds * 1000;
+    const hidden = new Set(options.hiddenProviders);
+    // A read already running started without the providers that become visible only now.
+    const revealed = [...this.hidden].filter((id) => !hidden.has(id) && this.collectors[id]);
+    this.hidden = hidden;
+    if (revealed.length) void this.collectLater(revealed);
+    if (!this.timer) return;
+    this.stop();
+    this.start();
   }
 
   stop(): void {
@@ -51,12 +68,14 @@ export class Monitor {
   }
 
   snapshots(provider?: string): Snapshot[] {
-    if (provider) return this.data.get(provider) ?? [];
-    return [...this.data.values()].flat();
+    if (provider) return this.hidden.has(provider) ? [] : this.data.get(provider) ?? [];
+    return [...this.data].filter(([id]) => !this.hidden.has(id)).flatMap(([, snapshots]) => snapshots);
   }
 
   private async collectAll(): Promise<void> {
-    await Promise.all(Object.entries(this.collectors).map(([id, collect]) => this.run(id, collect)));
+    // Hidden providers are not even collected: no network call, no subprocess.
+    const active = Object.entries(this.collectors).filter(([id]) => !this.hidden.has(id));
+    await Promise.all(active.map(([id, collect]) => this.run(id, collect)));
   }
 
   /** Each provider is isolated: a failure or unexpected answer from one does not affect the others. */
@@ -65,7 +84,15 @@ export class Monitor {
       this.apply(id, await withTimeout(collect(), this.timeoutMs));
     } catch (reason) {
       this.fail(id, safeMessage(reason));
+    } finally {
+      this.onUpdate?.();
     }
+  }
+
+  /** Waits for the read in flight: reusing it would leave a revealed provider pending until the next cycle. */
+  private async collectLater(ids: string[]): Promise<void> {
+    await this.inFlight;
+    await Promise.all(ids.map((id) => this.run(id, this.collectors[id])));
   }
 
   private apply(provider: string, fresh: Snapshot[]): void {

@@ -1,14 +1,14 @@
 // Quota panel: plain ANSI list, providers side by side when they fit. No images, no animation.
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { getTerminalColorMode, mixColors, rgbColor, styleText, truncateToWidth, visibleWidth, type Color, type Component } from "@earendil-works/pi-tui";
+import { DEFAULTS, type Config } from "./config.ts";
 import { bar } from "./format.ts";
 import { outdated } from "./models.ts";
 import type { Snapshot, Window } from "./models.ts";
 import { expired, pace, visible } from "./rules.ts";
 import type { Monitor } from "./service.ts";
 
-/** Balance bar width, separator between windows and gap between provider columns. */
-const BAR_WIDTH = 8;
+/** Separator between windows and gap between provider columns. */
 const SEP = " │ ";
 const GAP = "   ";
 /** Below this a provider does not fit legibly; two columns only above 2 x this. */
@@ -54,9 +54,9 @@ export function compactReset(w: Window, now: number): string {
  * One window as text: group and balance bar with the pace mark, plus the time until renewal.
  * Antigravity mixes families (Gemini/Claude/Argon): the group's first word identifies the window.
  */
-function windowItem(w: Window, now: number, stale: boolean, theme: Theme): string {
+function windowItem(w: Window, now: number, stale: boolean, theme: Theme, barWidth: number): string {
   const reference = pace(w, now, stale);
-  const marker = bar(100 - w.used, reference === undefined ? undefined : 100 - reference, BAR_WIDTH);
+  const marker = bar(100 - w.used, reference === undefined ? undefined : 100 - reference, barWidth);
   const tag = w.group ? w.group.split(/\s+/)[0] + " " : "";
   return tag + theme.fg(barColor(w, reference), marker) + " " + compactReset(w, now);
 }
@@ -92,10 +92,10 @@ function wrap(name: string, items: string[], width: number): string[] {
 }
 
 /** Lines of one provider, already at the column width. */
-function providerLines(s: Snapshot, width: number, now: number, theme: Theme): string[] {
+function providerLines(s: Snapshot, width: number, now: number, theme: Theme, barWidth: number): string[] {
   const stale = outdated(s, now);
   // No width cut: only exhausted windows vanish, and the ones below them (see visible).
-  const items = visible(s.windows).map((w) => windowItem(w, now, stale, theme));
+  const items = visible(s.windows).map((w) => windowItem(w, now, stale, theme, barWidth));
   return wrap(paintName(theme, s), items, width);
 }
 
@@ -143,14 +143,18 @@ function expiredLine(snapshots: Snapshot[], now: number, width: number, theme: T
   return wrap(tag, items.map((i) => i.text), width);
 }
 
+type PanelOptions = Pick<Config, "barWidth" | "columns" | "showExpired">;
+
 /** Widget component: providers in the dock below the editor, up to two per line. */
 export class QuotaPanel implements Component {
   private readonly monitor: Monitor;
   private readonly theme: Theme;
+  private readonly options: PanelOptions;
 
-  constructor(monitor: Monitor, theme: Theme) {
+  constructor(monitor: Monitor, theme: Theme, options: PanelOptions = DEFAULTS) {
     this.monitor = monitor;
     this.theme = theme;
+    this.options = options;
   }
 
   render(width: number): string[] {
@@ -159,19 +163,19 @@ export class QuotaPanel implements Component {
     const snapshots = this.monitor.snapshots().filter((s) => !s.disabled && s.windows.length);
     const active = snapshots.filter((s) => visible(s.windows).length);
 
-    const cols = width >= 2 * MIN_COL + visibleWidth(GAP) ? 2 : 1;
+    const cols = this.options.columns === 2 && width >= 2 * MIN_COL + visibleWidth(GAP) ? 2 : 1;
     const colWidth = Math.floor((width - (cols - 1) * visibleWidth(GAP)) / cols);
     const lines: string[] = [];
 
     for (let i = 0; i < active.length; i += cols) {
-      const blocks = active.slice(i, i + cols).map((s) => providerLines(s, colWidth, now, this.theme));
+      const blocks = active.slice(i, i + cols).map((s) => providerLines(s, colWidth, now, this.theme, this.options.barWidth));
       const height = Math.max(...blocks.map((b) => b.length));
       for (let r = 0; r < height; r++) {
         const line = blocks.map((b) => b[r] ?? " ".repeat(colWidth)).join(GAP);
         lines.push(truncateToWidth(line, width, "…", true));
       }
     }
-    lines.push(...expiredLine(snapshots, now, width, this.theme));
+    if (this.options.showExpired) lines.push(...expiredLine(snapshots, now, width, this.theme));
     if (!lines.length) return [truncateToWidth(this.theme.fg("dim", "No quota available. See the README."), width, "…", true)];
     return lines;
   }

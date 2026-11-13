@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agyConsentUrl, emailFromIdToken, saveAccounts, validAccounts } from "../src/agy-login.ts";
@@ -11,6 +11,8 @@ test("saveAccounts creates the directory and writes with mode 600", async () => 
   await saveAccounts(file, [{ refreshToken: "r1", email: "a@b.c" }]);
   assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")), [{ refreshToken: "r1", email: "a@b.c" }]);
+  // Temp file plus rename: a reader never catches a half-written file, and no temp is left behind.
+  assert.deepEqual(await readdir(dir), ["agy-accounts.json"]);
 });
 
 test("saveAccounts tightens the mode of an existing file", async () => {

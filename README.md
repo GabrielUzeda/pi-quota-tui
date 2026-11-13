@@ -23,7 +23,8 @@ pi install git:github.com/GabrielUzeda/pi-quota-tui
 To remove it: `pi remove npm:pi-quota-tui`.
 
 The panel shows up by itself when pi opens, as a list below the editor.
-Data refreshes every 2 minutes.
+Data refreshes every 2 minutes by default (see [Preferences](#preferences)) and the panel redraws as soon as a
+read lands, even while pi sits idle.
 
 ## Layout
 
@@ -54,8 +55,40 @@ Expired: Antigravity Argon 6d │ CommandCode 12.2d
 | `/quota [all\|opencode\|agy\|commandcode]` | Text report in the chat (never enters the model context) |
 | `/usage` | Alias of `/quota` |
 | `/quota-login` | Imports the Antigravity accounts from AGY or runs the Google login inside the extension |
+| `/quota-config` | Edits the panel preferences and saves them to the JSON in pi's agent dir |
 
 The `get_quotas` tool hands the same report to the model when you ask for it.
+
+## Preferences
+
+`/quota-config` opens a menu and saves to `~/.pi/agent/pi-quota-tui.json`. The file can also be edited by hand:
+it is read at session start and every time `/quota-config` opens. Saving applies immediately (the panel is remounted
+and the polling restarts); **Esc** leaves the file untouched. Missing or invalid fields fall back to the default;
+unreadable JSON falls back to all defaults with a warning. Saving from the menu keeps keys it does not know and copies
+a broken file to `pi-quota-tui.json.bak` first. Like pi, the folder follows `PI_CODING_AGENT_DIR` when it is set
+(`auth.json` is read from there too).
+
+```json
+{
+  "hiddenProviders": [],
+  "refreshSeconds": 120,
+  "showOnStart": true,
+  "placement": "belowEditor",
+  "barWidth": 8,
+  "columns": 2,
+  "showExpired": true
+}
+```
+
+| Field | Values | Effect |
+|---|---|---|
+| `hiddenProviders` | `antigravity`, `opencode`, `openai`, `claude`, `commandcode` | Neither collected (no network, no subprocess) nor shown in the panel, `/quota` or `get_quotas` |
+| `refreshSeconds` | 30..86400 | Polling interval |
+| `showOnStart` | `true`/`false` | Mounts the panel when pi opens; `/quotas` still toggles it |
+| `placement` | `belowEditor`/`aboveEditor` | Where the panel sits |
+| `barWidth` | 4..30 | Characters per balance bar |
+| `columns` | `1`/`2` | Most providers per row (2 only when the terminal is wide enough) |
+| `showExpired` | `true`/`false` | Shows the final `Expired:` row |
 
 ## Configuration
 
@@ -67,7 +100,7 @@ Each provider only appears if it is configured **and** has at least one quota wi
 | CommandCode | `commandcode` entry in `auth.json`; without it, `COMMAND_CODE_API_KEY` (or `COMMANDCODE_API_KEY`) |
 | Antigravity | Account list in `~/.local/share/pi-quota-tui/agy-accounts.json` (`[{ email, projectId, refreshToken }]`, mode `600`), created by `/quota-login`. AGY's `accounts.json` is only a fallback and `PI_QUOTA_TUI_AGY_ACCOUNTS` overrides both. No proxy required. |
 | OpenAI Codex | **Required to pull its quotas:** the `codex` CLI installed and on PATH (quotas are read through `codex app-server`). Without the CLI the provider simply does not show up. |
-| Claude Code | Desktop app history (`plan-usage-history.json`) and, without it, the subscription OAuth (`/login` Claude Pro/Max in pi). The first source with data wins; with neither, the provider stays out of the panel |
+| Claude Code | Desktop app history (`plan-usage-history.json`, searched in `$XDG_CONFIG_HOME/Claude/`, `~/.local/share/Claude/` and `~/.claude/`; the newest wins) and, without it, the subscription OAuth (`/login` Claude Pro/Max in pi). The first source with data wins; with neither, the provider stays out of the panel |
 
 `auth.json` is only read when its permissions are `600` (no group or other access). **It takes priority**; env vars are the fallback when the section is missing, empty, or the file is rejected.
 
@@ -100,19 +133,21 @@ After that the extension is **self-contained**: the file is its own, AGY can be 
 - Requests time out after 25 s. Responses are capped at 2 MiB and redirects are not followed.
 - HTTP is only accepted on `127.0.0.1`. Errors surface as short messages, without URL, headers or response body.
 - If a request fails, the panel keeps the last reading; the reason shows up in `/quota`.
+- Each open pi session polls on its own, without a shared cache: two sessions mean two calls per interval.
+  Providers in `hiddenProviders` are skipped entirely (no network, no `codex` subprocess).
 - Antigravity refreshes the token with Google and queries `v1internal:retrieveUserQuotaSummary` directly, with no local process. Accounts come from a file (see Configuration); families appear separately (Gemini, Claude/GPT, Gemini 4 Argon) and different accounts are neither summed nor averaged. The access token lives in memory only.
 
 ## Limitations
 
 - **Antigravity (embedded credential):** token refresh uses the Antigravity CLI OAuth client, published in the code by the author's decision. If Google revokes or restricts that client, the provider stops working and needs a client of its own again (`PI_QUOTA_TUI_AGY_CLIENT_ID`/`_SECRET` would be the path). Per-model cooldowns are not read: they only existed in the proxy.
 - Tested on Linux.
-- **Claude Code (debt):** the desktop history and the OAuth fallback are wired up, but the OAuth path (`GET https://api.anthropic.com/api/oauth/usage`, header `anthropic-beta: oauth-2025-04-20`, `anthropic` token with `type: "oauth"` from `auth.json`) has **no integration test** — it needs a real Claude Pro/Max login. Only `parseOauthUsage` is tested; cover network/401 once a test credential exists.
+- **Claude Code (debt):** the desktop history and the OAuth fallback are wired up. The OAuth path (`GET https://api.anthropic.com/api/oauth/usage`, header `anthropic-beta: oauth-2025-04-20`, `anthropic` token with `type: "oauth"` from `auth.json`) is tested against a mocked API — request headers, answer parsing, HTTP 401 and network failure — but not against a real Claude Pro/Max login. Cover that end to end once a test credential exists.
 
 ## Development
 
 ```sh
 npm install
-npm test          # unit tests plus the extension smoke test
+npm test          # unit and cross-cutting tests (real extension factory, real pi session via the SDK) plus the smoke test
 npm run typecheck
 ```
 

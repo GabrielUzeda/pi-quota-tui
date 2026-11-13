@@ -9,6 +9,26 @@ version and lists publish dates. This file is the human record; each release is 
 
 ## [Unreleased]
 
+### Added
+- Preferences in `~/.pi/agent/pi-quota-tui.json`, editable by hand or through the new
+  `/quota-config` menu: hidden providers (not collected at all), refresh interval, panel on start,
+  panel position, bar width, providers per row and the `Expired:` row. Saved changes apply live.
+- Tests for the preferences and a cross-cutting test that drives the real extension factory from
+  the JSON on disk through the panel, `/quota` and `/quota-config`.
+- Tests that run the extension inside a real pi `AgentSession` (SDK), cover Claude OAuth usage and
+  the `/quota-login` loopback + PKCE exchange over mocked HTTP, and check the refresh timer.
+
+### Fixed
+- `auth.json` and the preferences file follow `PI_CODING_AGENT_DIR`, like pi itself.
+- The panel asks pi for a redraw when a read lands: quotas and countdowns no longer wait for the
+  next keypress while pi is idle.
+- A provider shown again in `/quota-config` during a running read is collected right after it
+  instead of staying in "Waiting for the first read." until the next poll.
+- Two pi sessions in one process keep their own OAuth token source, so a closed session no longer
+  sends the live one back to an expired token in `auth.json`.
+- The Antigravity accounts file is written through a temp file and a rename: a concurrent read
+  never sees half a file and a crash cannot lose the refresh tokens.
+
 ### Changed
 - Everything user-visible is now English: panel and report labels (`% USED | % REMAINING`,
   `QUOTA WATCH // AI MONITOR`, `Not configured: ...`), window labels (`5 hours`, `Weekly`,

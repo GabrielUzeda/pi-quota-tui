@@ -4,6 +4,8 @@ import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { loginAgy } from "./agy-login.ts";
+import { configPath, DEFAULTS, loadConfig, saveConfig, type Config } from "./config.ts";
+import { editConfig } from "./config-menu.ts";
 import { report, resolveSource, SOURCE_NAMES } from "./format.ts";
 import { QuotaPanel } from "./panel.ts";
 import type { Snapshot } from "./models.ts";
@@ -14,18 +16,26 @@ const WIDGET = "pi-quota-tui-quotas";
 
 export default function (pi: ExtensionAPI) {
   const monitor = new Monitor();
+  let config: Config = DEFAULTS;
   let shown = false;
+  let stopAuth: (() => void) | undefined;
 
-  // Widget below the editor: reserves layout lines instead of covering the chat.
+  // Widget next to the editor: reserves layout lines instead of covering the chat.
   const showPanel = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
-    ctx.ui.setWidget(WIDGET, (_tui, theme) => new QuotaPanel(monitor, theme), { placement: "belowEditor" });
+    const options = config;
+    // The panel reads only when pi renders it, so a finished collection asks for one.
+    ctx.ui.setWidget(WIDGET, (tui, theme) => {
+      monitor.onUpdate = () => tui.requestRender();
+      return new QuotaPanel(monitor, theme, options);
+    }, { placement: options.placement });
     shown = true;
   };
 
   // setWidget(undefined) unmounts the dock panel.
   const hidePanel = (ctx: ExtensionContext) => {
     if (ctx.hasUI) ctx.ui.setWidget(WIDGET, undefined);
+    monitor.onUpdate = undefined;
     shown = false;
   };
 
@@ -38,16 +48,24 @@ export default function (pi: ExtensionAPI) {
     return report(snapshots, nowSec());
   };
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     // pi refreshes the OAuth token only while a model runs; asking the registry keeps the read alive.
-    setOAuthRefresh(async (provider) => (await ctx.modelRegistry.getProviderAuth(provider))?.auth.apiKey);
+    stopAuth?.();
+    stopAuth = setOAuthRefresh(async (provider) => (await ctx.modelRegistry.getProviderAuth(provider))?.auth.apiKey);
+    const loaded = await loadConfig();
+    config = loaded.config;
+    if (loaded.error && ctx.hasUI) ctx.ui.notify(loaded.error, "warning");
+    monitor.configure(config);
     monitor.start();
-    showPanel(ctx);
+    if (config.showOnStart) showPanel(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     hidePanel(ctx);
     monitor.stop();
+    // Drops this session's token source: another session keeps its own.
+    stopAuth?.();
+    stopAuth = undefined;
   });
 
   pi.registerEntryRenderer("quota-report", (entry: { data?: { content?: string } }) =>
@@ -78,6 +96,28 @@ export default function (pi: ExtensionAPI) {
       } catch (error) {
         ctx.ui.notify(error instanceof Error ? error.message : "Antigravity login failed.", "error");
       }
+    },
+  });
+
+  pi.registerCommand("quota-config", {
+    description: "Edits the panel preferences (saved to pi-quota-tui.json in the pi agent dir)",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      // Re-reads the file so hand edits show up in the menu.
+      const loaded = await loadConfig();
+      if (loaded.error) ctx.ui.notify(loaded.error + " Saving keeps a copy in " + configPath() + ".bak.", "warning");
+      const edited = await editConfig(ctx.ui, loaded.config);
+      if (!edited) return ctx.ui.notify("Settings not saved.", "info");
+      try {
+        await saveConfig(edited);
+      } catch {
+        return ctx.ui.notify("Could not write " + configPath() + ".", "error");
+      }
+      config = edited;
+      monitor.configure(config);
+      if (shown) showPanel(ctx);
+      void monitor.refresh();
+      ctx.ui.notify("Saved to " + configPath() + ".", "info");
     },
   });
 
