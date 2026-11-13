@@ -7,7 +7,7 @@ import { loginAgy } from "./agy-login.ts";
 import { report, resolveSource, SOURCE_NAMES } from "./format.ts";
 import { QuotaPanel } from "./panel.ts";
 import type { Snapshot } from "./models.ts";
-import { nowSec } from "./providers.ts";
+import { nowSec, setOAuthRefresh } from "./providers.ts";
 import { Monitor } from "./service.ts";
 
 const WIDGET = "pi-quota-tui-quotas";
@@ -39,6 +39,8 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", (_event, ctx) => {
+    // pi refreshes the OAuth token only while a model runs; asking the registry keeps the read alive.
+    setOAuthRefresh(async (provider) => (await ctx.modelRegistry.getProviderAuth(provider))?.auth.apiKey);
     monitor.start();
     showPanel(ctx);
   });

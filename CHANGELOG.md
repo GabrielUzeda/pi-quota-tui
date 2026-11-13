@@ -19,6 +19,15 @@ version and lists publish dates. This file is the human record; each release is 
   `en-US` locale.
 
 ### Fixed
+- Codex's 30-day window fell outside the duration table, so it had no cycle: the bar showed in
+  the theme's accent (violet) and `/quota` wrote `PACE UNAVAILABLE`, with the label
+  `43200 min window`. `43200` is now `Monthly` / 30 days, which restores the pace color, the
+  forecast, the health line and the monthly rank in the exhaustion hierarchy.
+- Claude Code disappeared from the panel until a model was used: pi only refreshes the OAuth
+  token in `auth.json` while a model runs, so the extension read an expired token, got HTTP 401
+  and had no window to show. `oauthAccess` now takes the token from the model registry
+  (`getProviderAuth`), which refreshes and persists it under pi's lock, and falls back to
+  `auth.json` when the registry is unavailable.
 - `User-Agent` sent to the providers was stuck at `pi-quota-tui/0.2`.
 
 ### Removed

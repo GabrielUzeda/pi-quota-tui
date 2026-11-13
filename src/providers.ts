@@ -149,10 +149,27 @@ export async function secret(envNames: string[], section: string): Promise<strin
   return "";
 }
 
-/** OAuth token saved by the pi login (`type: "oauth"`); empty when the section is an api key or missing. */
-async function oauthAccess(section: string): Promise<string> {
+/**
+ * Fresh access token for an OAuth section, or undefined. pi only refreshes (and persists) the
+ * token in auth.json when a model runs, so the extension asks the model registry instead of
+ * using an expired token and getting HTTP 401.
+ */
+type OAuthRefresh = (section: string) => Promise<string | undefined>;
+let oauthRefresh: OAuthRefresh | undefined;
+
+export function setOAuthRefresh(refresh: OAuthRefresh | undefined): void {
+  oauthRefresh = refresh;
+}
+
+/**
+ * OAuth token saved by the pi login (`type: "oauth"`); empty when the section is an api key or
+ * missing. The token from the model registry wins; auth.json is the fallback when it is unavailable.
+ */
+export async function oauthAccess(section: string): Promise<string> {
   const entry = await authEntry(section);
-  const token = entry.type === "oauth" ? entry.access : undefined;
+  if (entry.type !== "oauth") return "";
+  const fresh = await oauthRefresh?.(section).catch(() => undefined);
+  const token = fresh || entry.access;
   return typeof token === "string" ? token.trim() : "";
 }
 
@@ -455,7 +472,12 @@ async function collectAntigravity(): Promise<Snapshot[]> {
 
 // --- OpenAI/Codex: 'codex app-server --stdio' with the session already logged in (no tokens here) ---
 
-const CODEX_DURATIONS: Record<number, [string, number]> = { 300: ["5 hours", 18000], 10080: ["Weekly", 604800] };
+// Codex accounts report one of these three windows; 43200 (monthly) is the plan without 5h/weekly.
+const CODEX_DURATIONS: Record<number, [string, number]> = {
+  300: ["5 hours", 18000],
+  10080: ["Weekly", 604800],
+  43200: ["Monthly", 2592000],
+};
 
 function codexBucket(result: Json): Json {
   const byId = result.rateLimitsByLimitId;

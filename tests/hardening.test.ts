@@ -12,8 +12,9 @@ import { bar, details, report, resolveSource } from "../src/format.ts";
 import { countdown, delta, forecast, health, pace, resetText } from "../src/rules.ts";
 import { outdated, type Snapshot, type Window } from "../src/models.ts";
 import {
-  agySnapshot, clamped, collapse, COLLECTORS, epoch, estimateReset, nextMonthlyReset, num, paidIndex, parseAgyAccounts,
-  parseCodex, parseCommandcode, parseGroups, parseJson, parseOauthUsage, parseOpencode, readJson, ReadError, secret,
+  agySnapshot, clamped, collapse, COLLECTORS, epoch, estimateReset, nextMonthlyReset, num, oauthAccess, paidIndex,
+  parseAgyAccounts, parseCodex, parseCommandcode, parseGroups, parseJson, parseOauthUsage, parseOpencode, readJson,
+  ReadError, secret, setOAuthRefresh,
 } from "../src/providers.ts";
 import { QuotaPanel } from "../src/panel.ts";
 import { Monitor } from "../src/service.ts";
@@ -272,6 +273,14 @@ test("Codex: a percentage above 100 becomes 100 and an unknown duration gets no 
   assert.equal(s.windows[1].label, "Weekly");
 });
 
+test("Codex: a 30-day window is Monthly, with a cycle, so it gets pace and health", () => {
+  const s = parseCodex({ rateLimits: { primary: { usedPercent: 0, windowDurationMins: 43200, resetsAt: NOW + 29 * 86400 } } }, NOW);
+  const [w] = s.windows;
+  assert.equal(w.label, "Monthly");
+  assert.equal(w.duration, 2592000);
+  assert.equal(health(s, NOW), "ON TRACK");
+});
+
 test("Codex: no limits or no usable percentage becomes a readable error", () => {
   assert.throws(() => parseCodex({}, NOW), /did not report quota limits/);
   assert.throws(() => parseCodex({ rateLimits: { primary: { usedPercent: "x" } } }, NOW), /without a usable percentage/);
@@ -359,6 +368,33 @@ test("Claude: an expired 5h window does not estimate the renewal time", () =>
     const [s] = await COLLECTORS.claude();
     assert.equal(s.windows[0].resetsAt, undefined);
     assert.match(s.note ?? "", /window expired/);
+  }));
+
+test("Claude OAuth: the registry token wins over the expired one in auth.json", () =>
+  sandbox(async (home) => {
+    await writeAuth(home, JSON.stringify({ anthropic: { type: "oauth", access: "expired", refresh: "r", expires: 1 } }));
+    setOAuthRefresh(async (section) => (section === "anthropic" ? " fresh " : undefined));
+    try {
+      assert.equal(await oauthAccess("anthropic"), "fresh");
+    } finally {
+      setOAuthRefresh(undefined);
+    }
+  }));
+
+test("Claude OAuth: a failed refresh and an api-key section fall back to auth.json", () =>
+  sandbox(async (home) => {
+    await writeAuth(home, JSON.stringify({ anthropic: { type: "oauth", access: "kept", refresh: "r", expires: 1 } }));
+    setOAuthRefresh(async () => {
+      throw new Error("lock unavailable");
+    });
+    try {
+      assert.equal(await oauthAccess("anthropic"), "kept");
+      setOAuthRefresh(async () => "not-an-oauth-token");
+      await writeAuth(home, JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-api" } }));
+      assert.equal(await oauthAccess("anthropic"), "");
+    } finally {
+      setOAuthRefresh(undefined);
+    }
   }));
 
 test("estimateReset: weekly is never invented", () => {
