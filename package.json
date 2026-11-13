@@ -23,7 +23,7 @@
     "image": "https://raw.githubusercontent.com/GabrielUzeda/pi-quota-tui/main/assets/preview.svg"
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.ts\" && node tests/extension.smoke.mjs",
+    "test": "node --test --experimental-test-coverage --test-coverage-lines=90 --test-coverage-branches=85 --test-coverage-functions=85 \"tests/*.test.ts\" && node tests/extension.smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
