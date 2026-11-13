@@ -1,10 +1,14 @@
 // List panel: up to two providers per line, windows separated by │ and wrapped with an indent.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { getCapabilities, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
 import { barColor, QuotaPanel, waitColor } from "../src/panel.ts";
 import { Monitor } from "../src/service.ts";
 import type { Snapshot } from "../src/models.ts";
+
+// A CI runner has no TERM/COLORTERM, so detection falls back to 256 colors: pin truecolor here or the
+// escape assertions below would only hold on a machine with a color-capable terminal.
+setCapabilities({ ...getCapabilities(), trueColor: true });
 
 const NOW = Date.now() / 1000;
 const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t } as never;
