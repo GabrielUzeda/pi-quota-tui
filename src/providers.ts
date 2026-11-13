@@ -21,7 +21,7 @@ const isObject = (value: unknown): value is Json =>
 export const nowSec = () => Date.now() / 1000;
 
 /** Identification sent to the APIs; matches the package name. */
-const USER_AGENT = "pi-quota-tui/0.4.2";
+const USER_AGENT = "pi-quota-tui/0.5.0";
 
 /** Number within a range; a percentage above 100 becomes 100 instead of vanishing. */
 export function clamped(value: unknown, low: number, high: number): number | undefined {
